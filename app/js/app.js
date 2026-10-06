@@ -2,6 +2,7 @@ import { parseExnessReport, toMs } from './core/parser.js';
 import { computeStats, equityCurve, summarize, groupBy, day } from './core/stats.js';
 import { buildInsights, fmtDuration, WEEKDAYS } from './core/insights.js';
 import { positionSize, inferValuePerLot, targets } from './core/risk.js';
+import { groupEntries, localDay, toLocal, stopAlert, dayAlerts, missingJournal, DEFAULTS } from './core/entries.js';
 import * as store from './core/store.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -42,6 +43,34 @@ const shortTime = (iso) => `${iso.slice(5, 10)} ${iso.slice(11, 16)}`;
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 4500);
+}
+
+// ---------- entradas (ventanas de N minutos) ----------
+const entryCfg = () => ({ windowMin: state.settings.windowMin ?? DEFAULTS.windowMin, tzOffset: state.settings.tzOffset ?? DEFAULTS.tzOffset });
+const entriesOf = (ts) => groupEntries(ts, entryCfg());
+const localHM = (iso) => toLocal(iso, entryCfg().tzOffset).slice(11, 16);
+const entryKey = (id) => store.noteKey(state.settings.active, id);
+
+// Alerta global: en el último día operado (o el anterior) hubo dos entradas negativas seguidas y la bitácora está incompleta.
+function pendingStop() {
+  const days = dayAlerts(entriesOf(allTrades()));
+  const keys = [...days.keys()].sort();
+  const last = keys[keys.length - 1];
+  if (!last) return null;
+  const minDay = new Date(Date.parse(`${last}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
+  for (const d of keys.filter((k) => k >= minDay).reverse()) {
+    const info = days.get(d);
+    const missing = missingJournal(state.journal[d]);
+    if (info.alert.active && missing.length) return { day: d, alert: info.alert, missing };
+  }
+  return null;
+}
+function renderAlertBar() {
+  const bar = $('#alertBar'), p = pendingStop();
+  if (!p) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.innerHTML = `🛑 <b>ALTO:</b> las entradas ${p.alert.entries[0]} y ${p.alert.entries[1]} del ${fmtDay(p.day)} cerraron en negativo (${money(p.alert.loss, { sign: true })}). Detente y completa la bitácora del día — falta: ${p.missing.join(', ')}. <button class="btn sm" id="alertGo">Completar bitácora</button>`;
+  $('#alertGo').onclick = () => { tab = 'bitacora'; view.selDay = p.day; view.calMonth = p.day.slice(0, 7); render(); };
 }
 
 // ---------- filtros ----------
@@ -141,6 +170,10 @@ function renderStats(el, ts, st) {
   for (const t of ts) for (const tag of state.tradeNotes[store.noteKey(state.settings.active, t.id)]?.tags || []) (tagMap.get(tag) || tagMap.set(tag, []).get(tag)).push(t);
   for (const [k, v] of tagMap) tagGroups.push({ key: k, ...summarize(v) });
   const hours = st.byHour;
+  const ents = entriesOf(ts);
+  const entSum = summarize(ents.map((e) => ({ net: e.net, durationSec: 0, volume: e.volume, commission: 0, swap: 0 })));
+  const dayList = [...dayAlerts(ents).values()];
+  const stopDays = dayList.filter((d) => d.alert.active).length;
   el.innerHTML = `
   <div class="grid cols2">
     <div class="card"><h3>Detalle general</h3><table><tbody>
@@ -157,6 +190,15 @@ function renderStats(el, ts, st) {
       <tr><td>Comisión / swap</td><td>${money(s.commission)} / ${money(s.swap)}</td></tr>
     </tbody></table><p class="note">Una operación con resultado exactamente 0 no cuenta como ganada (MT5 sí la cuenta en su % de ganadas).</p></div>
     <div class="card"><h3>Por mes</h3><div class="chart"><canvas id="c-month"></canvas></div></div>
+    <div class="card"><h3>Entradas (ventanas de ${entryCfg().windowMin} min)</h3><table><tbody>
+      <tr><td>Entradas</td><td>${entSum.n} en ${dayList.length} días</td></tr>
+      <tr><td>Operaciones por entrada (media)</td><td>${(ts.length / Math.max(1, entSum.n)).toFixed(1)}</td></tr>
+      <tr><td>Entradas ganadoras</td><td>${entSum.wins} (${pct(entSum.winRate, 0)})</td></tr>
+      <tr><td>Resultado medio por entrada</td><td class="${cls(entSum.expectancy)}">${money(entSum.expectancy, { sign: true })}</td></tr>
+      <tr><td>Ganancia / pérdida media</td><td>${money(entSum.avgWin)} / ${money(entSum.avgLoss)}</td></tr>
+      <tr><td>Factor de beneficio</td><td>${Number.isFinite(entSum.profitFactor) ? num2(entSum.profitFactor) : '∞'}</td></tr>
+      <tr><td>Días con alerta de ALTO (2 negativas seguidas)</td><td class="${stopDays ? 'neg' : ''}">${stopDays}</td></tr>
+    </tbody></table></div>
     ${groupTable('Por hora de entrada (servidor)', hours, (k) => `${String(k).padStart(2, '0')}:00`, { id: 'c-hour' })}
     ${groupTable('Por día de la semana', st.byWeekday, (k) => WEEKDAYS[k], { id: 'c-wd' })}
     ${groupTable('Por duración', st.byDuration, (k) => k, { id: 'c-dur' })}
@@ -175,7 +217,7 @@ function renderStats(el, ts, st) {
 
 function renderInsights(el, ts, st) {
   if (!ts.length) { el.innerHTML = noData(); return; }
-  const list = buildInsights(ts, st, { fmt: money, startBalance: st.equity.deposits });
+  const list = buildInsights(ts, st, { fmt: money, startBalance: st.equity.deposits, entries: entriesOf(ts) });
   const names = { alta: 'Prioridad alta', media: 'A mejorar', info: 'Observación', ok: 'Lo que haces bien' };
   el.innerHTML = `<p class="note">Análisis automático de ${ts.length} operaciones. Son patrones estadísticos, no garantías: con pocas operaciones pueden ser casualidad.</p>` +
     ['alta', 'media', 'info', 'ok'].map((lv) => {
@@ -202,8 +244,10 @@ function renderOps(el, ts) {
 // ---------- bitácora ----------
 function renderBitacora(el) {
   const ts = allTrades();
-  const byDay = new Map(groupBy(ts, (t) => day(t.closeTime)).map((g) => [g.key, g]));
-  const last = ts.length ? ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), '').slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const tz = entryCfg().tzOffset;
+  const byDay = new Map(groupBy(ts, (t) => localDay(t.closeTime, tz)).map((g) => [g.key, g]));
+  const alerts = dayAlerts(entriesOf(ts));
+  const last = ts.length ? localDay(ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), ''), tz) : new Date().toISOString().slice(0, 10);
   if (!view.calMonth) view.calMonth = last.slice(0, 7);
   if (!view.selDay) view.selDay = last;
   const [y, m] = view.calMonth.split('-').map(Number);
@@ -216,15 +260,22 @@ function renderBitacora(el) {
     const key = `${view.calMonth}-${String(d).padStart(2, '0')}`;
     const g = byDay.get(key), j = state.journal[key];
     if (g) monthNet += g.net;
-    cells += `<button class="d ${g ? (g.net >= 0 ? 'win' : 'loss') : ''} ${j ? 'has-note' : ''} ${key === view.selDay ? 'sel' : ''}" data-day="${key}">${d}${g ? `<b class="${cls(g.net)}">${money(g.net, { sign: true })}</b><span>${g.n} op.</span>` : ''}</button>`;
+    const ad = alerts.get(key);
+    cells += `<button class="d ${g ? (g.net >= 0 ? 'win' : 'loss') : ''} ${j ? 'has-note' : ''} ${key === view.selDay ? 'sel' : ''}" data-day="${key}">${d}${ad?.alert.active ? ' 🛑' : ''}${g ? `<b class="${cls(g.net)}">${money(g.net, { sign: true })}</b><span>${ad ? ad.entries.length : 0} entr. · ${g.n} op.</span>` : ''}</button>`;
   }
   const monthName = first.toLocaleDateString('es-CR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  el.innerHTML = `<div class="grid cols2">
+  el.innerHTML = `<div class="card" style="margin-bottom:12px"><div class="row">
+      <label class="inline">Una entrada = operaciones cerradas dentro de <input type="number" min="1" id="winMin" value="${entryCfg().windowMin}" style="width:70px"> min</label>
+      <label class="inline">Hora local = servidor <input type="number" step="1" id="tzOff" value="${entryCfg().tzOffset}" style="width:70px"> h</label>
+      <span class="note">Exness usa GMT; Costa Rica = −6. Define también el día de cada operación.</span></div></div>
+    <div class="grid cols2">
     <div class="card"><div class="row" style="justify-content:space-between"><button class="btn ghost sm" id="prevM">◀</button><b>${monthName[0].toUpperCase() + monthName.slice(1)}</b><button class="btn ghost sm" id="nextM">▶</button></div>
       <p class="note" style="text-align:center">Resultado del mes: <b class="${cls(monthNet)}">${money(monthNet, { sign: true })}</b></p>
       <div class="cal">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d) => `<div class="dow">${d}</div>`).join('')}${cells}</div></div>
     <div id="dayPanel"></div></div>
     <div id="journalStats" style="margin-top:12px"></div>`;
+  const setCfg = () => { const w = parseInt($('#winMin').value, 10), t = parseInt($('#tzOff').value, 10); if (w > 0) state.settings.windowMin = w; if (Number.isFinite(t)) state.settings.tzOffset = t; persist(); render(); };
+  $('#winMin').addEventListener('change', setCfg); $('#tzOff').addEventListener('change', setCfg);
   $('#prevM').onclick = () => { shiftMonth(-1); };
   $('#nextM').onclick = () => { shiftMonth(1); };
   el.querySelectorAll('[data-day]').forEach((b) => { b.onclick = () => { view.selDay = b.dataset.day; renderBitacora(el); }; });
@@ -239,11 +290,13 @@ function shiftMonth(delta) {
 
 function renderDayPanel(byDay) {
   const key = view.selDay, g = byDay.get(key), j = state.journal[key] || {};
-  const dayTrades = allTrades().filter((t) => day(t.closeTime) === key).sort((a, b) => a.openTime.localeCompare(b.openTime));
+  const dayEntries = entriesOf(allTrades()).filter((e) => e.day === key);
+  const stop = stopAlert(dayEntries), missing = missingJournal(j);
   const radio = (name, opts, val) => opts.map(([v, l]) => `<label><input type="radio" name="${name}" value="${v}" ${val === v ? 'checked' : ''}><span>${l}</span></label>`).join('');
   $('#dayPanel').innerHTML = `<div class="card">
     <h3>${fmtDay(key)}</h3>
-    ${g ? `<p><b class="${cls(g.net)}">${money(g.net, { sign: true })}</b> · ${g.n} operaciones · win rate ${pct(g.winRate, 0)} · PF ${Number.isFinite(g.profitFactor) ? num2(g.profitFactor) : '∞'}</p>` : '<p class="note">Sin operaciones este día (puedes anotar tu plan o descanso igualmente).</p>'}
+    ${stop.active ? `<div class="stop-box" id="stopBox">${stopText(stop, missing)}</div>` : ''}
+    ${g ? `<p><b class="${cls(g.net)}">${money(g.net, { sign: true })}</b> · ${dayEntries.length} entradas · ${g.n} operaciones · win rate ${pct(g.winRate, 0)} · PF ${Number.isFinite(g.profitFactor) ? num2(g.profitFactor) : '∞'}</p>` : '<p class="note">Sin operaciones este día (puedes anotar tu plan o descanso igualmente).</p>'}
     <form class="form" id="jForm" autocomplete="off">
       <label>Plan previo (qué buscaré, zonas, límite de pérdida, número de operaciones)<textarea name="plan">${esc(j.plan)}</textarea></label>
       <div><b style="font-size:13px">Estado emocional</b><div class="chips">${MOODS.map(([e, l]) => `<label><input type="radio" name="mood" value="${l}" ${j.mood === l ? 'checked' : ''} hidden><span>${e} ${l}</span></label>`).join('')}</div></div>
@@ -255,7 +308,7 @@ function renderDayPanel(byDay) {
         <select name="rating"><option value="">–</option>${[1, 2, 3, 4, 5].map((n) => `<option ${String(j.rating) === String(n) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <div class="note" id="saved"></div>
     </form>
-    ${dayTrades.length ? `<h3 style="margin-top:14px">Operaciones del día</h3><div class="scroll" style="max-height:260px"><table><tbody>${dayTrades.map((t) => `<tr><td>${t.openTime.slice(11, 16)}</td><td>${t.side === 'buy' ? 'C' : 'V'} ${t.volume}</td><td>${fmtDuration(t.durationSec)}</td><td class="${cls(t.net)}">${money(t.net, { sign: true })}</td><td style="text-align:left">${(state.tradeNotes[store.noteKey(state.settings.active, t.id)]?.tags || []).map((x) => `<span class="pill">${esc(x)}</span>`).join('')}<button class="btn ghost sm" data-note="${t.id}">Notas</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${dayEntries.length ? `<h3 style="margin-top:14px">Entradas del día</h3>${dayEntries.map(entryCard).join('')}` : ''}
   </div>`;
   const form = $('#jForm');
   let h;
@@ -266,6 +319,8 @@ function renderDayPanel(byDay) {
       const entry = Object.fromEntries(Object.entries(fd).filter(([, v]) => String(v).trim() !== ''));
       if (Object.keys(entry).length) state.journal[key] = { ...entry, updated: new Date().toISOString() }; else delete state.journal[key];
       persist(); $('#saved').textContent = 'Guardado ✓';
+      renderAlertBar();
+      if ($('#stopBox')) $('#stopBox').innerHTML = stopText(stop, missingJournal(state.journal[key]));
       const btn = document.querySelector(`[data-day="${key}"]`); if (btn) btn.classList.toggle('has-note', !!state.journal[key]);
     }, 400);
   });
@@ -344,6 +399,44 @@ function renderCalc(el) {
   });
   el.querySelectorAll('[data-risk]').forEach((b) => b.addEventListener('click', () => { form.riskPct.value = b.dataset.risk; calc(); }));
   calc();
+}
+
+
+function stopText(stop, missing) {
+  return `🛑 <b>ALTO.</b> Las entradas ${stop.entries[0]} y ${stop.entries[1]} cerraron en negativo (${money(stop.loss, { sign: true })}). Deja de operar por hoy y completa la bitácora${missing.length ? `: falta ${missing.join(', ')}` : ' (ya está completa ✓)'}.`;
+}
+
+function entryCard(e) {
+  const n = state.entryNotes[entryKey(e.id)];
+  const sides = [e.buys ? `${e.buys} compra${e.buys > 1 ? 's' : ''}` : '', e.sells ? `${e.sells} venta${e.sells > 1 ? 's' : ''}` : ''].filter(Boolean).join(' + ');
+  return `<div class="entry ${e.net >= 0 ? 'win' : 'loss'}">
+    <div class="row" style="justify-content:space-between"><b>Entrada ${e.index} · ${localHM(e.firstClose)}–${localHM(e.lastClose)}</b><b class="${cls(e.net)}">${money(e.net, { sign: true })}</b></div>
+    <div class="note">${e.n} operaciones (${sides}) · ${e.volume.toFixed(2)} lotes · ${e.wins} ganadoras · ${fmtDuration(e.durationSec)} en total</div>
+    ${(n?.tags || []).map((g) => `<span class="pill">${esc(g)}</span>`).join('')}${n?.note ? `<p class="entry-note">${esc(n.note)}</p>` : ''}
+    <div class="row"><button class="btn ghost sm" data-entry="${esc(e.id)}">${n ? 'Editar documentación' : 'Documentar entrada'}</button></div>
+    <details><summary class="note">Ver las ${e.n} operaciones</summary><table><tbody>${e.trades.map((t) => `<tr><td>${localHM(t.openTime)}</td><td>${t.side === 'buy' ? 'C' : 'V'} ${t.volume}</td><td>${fmtDuration(t.durationSec)}</td><td class="${cls(t.net)}">${money(t.net, { sign: true })}</td><td style="text-align:left">${(state.tradeNotes[store.noteKey(state.settings.active, t.id)]?.tags || []).map((x) => `<span class="pill">${esc(x)}</span>`).join('')}<button class="btn ghost sm" data-note="${t.id}">Notas</button></td></tr>`).join('')}</tbody></table></details>
+  </div>`;
+}
+
+function openEntryNote(id) {
+  const key = entryKey(id);
+  const n = state.entryNotes[key] || { tags: [], note: '' };
+  const e = entriesOf(allTrades()).find((x) => x.id === String(id));
+  const dlg = $('#tradeDlg');
+  dlg.innerHTML = `<form method="dialog" class="form"><h3 style="margin:0">Entrada ${e ? e.index : ''} · ${e ? fmtDay(e.day) : ''}</h3>
+    <p class="note">${e ? `${localHM(e.firstClose)}–${localHM(e.lastClose)} · ${e.n} operaciones · <b class="${cls(e.net)}">${money(e.net, { sign: true })}</b>` : ''}</p>
+    <div class="chips">${TAGS.map((g) => `<label><input type="checkbox" name="tag" value="${esc(g)}" ${n.tags.includes(g) ? 'checked' : ''} hidden><span>${esc(g)}</span></label>`).join('')}</div>
+    <label>Documentación (por qué entré, zona/imbalance, cómo promedié, qué pasó, qué sentí)<textarea name="note" style="min-height:140px">${esc(n.note)}</textarea></label>
+    <div class="row"><button class="btn" value="save">Guardar</button><button class="btn ghost" value="cancel">Cancelar</button></div></form>`;
+  dlg.querySelector('form').addEventListener('submit', (ev) => {
+    if (ev.submitter?.value !== 'save') return;
+    const f = ev.target;
+    const tags = [...f.querySelectorAll('[name=tag]:checked')].map((c) => c.value);
+    const note = f.note.value.trim();
+    if (tags.length || note) state.entryNotes[key] = { tags, note }; else delete state.entryNotes[key];
+    persist(); render();
+  });
+  dlg.showModal();
 }
 
 // ---------- notas por operación ----------
@@ -441,6 +534,7 @@ function render() {
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#filters').hidden = ['bitacora', 'datos', 'calc'].includes(tab) || !allTrades().length;
   $('#filters').classList.toggle('is-custom', view.period === 'custom');
+  renderAlertBar();
   const el = $(`#view-${tab}`);
   if (tab === 'datos') return renderDatos(el);
   if (tab === 'bitacora') return renderBitacora(el);
@@ -482,6 +576,7 @@ $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-
 document.addEventListener('click', (e) => {
   const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); tab = g.dataset.goto; render(); }
   const n = e.target.closest('[data-note]'); if (n) openNote(n.dataset.note);
+  const en = e.target.closest('[data-entry]'); if (en) openEntryNote(en.dataset.entry);
 });
 $('#accountSel').addEventListener('change', (e) => { state.settings.active = e.target.value; persist(); view.calMonth = null; view.selDay = null; view.symbol = ''; setupSelectors(); });
 $('#unitSel').addEventListener('change', (e) => { state.settings.unit = e.target.value; persist(); render(); });

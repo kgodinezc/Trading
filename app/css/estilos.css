@@ -85,3 +85,14 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 .note { color: var(--muted); font-size: 13px; }
 .warn-box { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
 @media (max-width: 640px) { .kpi .v { font-size: 20px; } .hint { margin-left: 0; } .cal .d { min-height: 54px; padding: 2px 3px; } }
+
+.alert-bar { background: var(--loss-bg); color: var(--loss); border-bottom: 2px solid var(--loss); padding: 10px 16px; font-size: 14px; }
+.alert-bar b { font-weight: 800; }
+.alert-bar .btn { margin-left: 8px; background: var(--loss); color: #fff; }
+.stop-box { background: var(--loss-bg); color: var(--loss); border: 1px solid var(--loss); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.entry { border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; display: grid; gap: 4px; }
+.entry.win { border-left-color: var(--win); } .entry.loss { border-left-color: var(--loss); }
+.entry-note { margin: 2px 0; white-space: pre-wrap; }
+.entry details table { margin-top: 6px; }
+label.inline { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-weight: 400; font-size: 13px; color: var(--ink); }
+.entry .pill { justify-self: start; }

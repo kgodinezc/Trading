@@ -169,3 +169,51 @@ test('targets calcula TP por ratio y win rate mínimo', () => {
   assert.ok(Math.abs(t[1].breakevenWinRate - 1 / 3) < 1e-9);
   assert.equal(targets(100, 105, [1])[0].tp, 95);
 });
+
+import { groupEntries, stopAlert, localDay, toLocal, missingJournal, dayAlerts } from '../app/js/core/entries.js';
+
+const T = (id, close, net) => ({ id, closeTime: close, openTime: close, net, volume: 0.1, side: 'buy', durationSec: 0 });
+
+test('groupEntries: ventana de 30 min anclada en el primer cierre', () => {
+  const ts = [
+    T(1, '2026-09-18T14:04:00', 35.3), T(2, '2026-09-18T14:19:38', 47.4), T(3, '2026-09-18T14:33:59', 10), // misma entrada (<30 min)
+    T(4, '2026-09-18T14:34:00', -5), T(5, '2026-09-18T14:50:00', -6), // nueva entrada (justo a los 30 min)
+  ];
+  const es = groupEntries(ts, { windowMin: 30, tzOffset: 0 });
+  assert.equal(es.length, 2);
+  assert.equal(es[0].n, 3);
+  assert.ok(Math.abs(es[0].net - 92.7) < 1e-9);
+  assert.equal(es[1].n, 2);
+  assert.equal(es[1].index, 2);
+});
+
+test('groupEntries: el día se calcula en hora local y no cruza medianoche local', () => {
+  assert.equal(toLocal('2026-09-18T00:11:45', -6), '2026-09-17T18:11:45');
+  assert.equal(localDay('2026-09-18T05:59:00', -6), '2026-09-17');
+  const es = groupEntries([T(1, '2026-09-18T05:50:00', 1), T(2, '2026-09-18T06:05:00', 1)], { windowMin: 30, tzOffset: -6 });
+  assert.deepEqual(es.map((e) => e.day), ['2026-09-17', '2026-09-18']);
+});
+
+test('stopAlert: dos entradas consecutivas negativas', () => {
+  const mk = (nets) => nets.map((net, i) => ({ index: i + 1, net }));
+  assert.equal(stopAlert(mk([5, -1, 4, -2])).active, false);
+  const a = stopAlert(mk([5, -1, -2, 3]));
+  assert.equal(a.active, true);
+  assert.deepEqual(a.entries, [2, 3]);
+  assert.equal(a.loss, -3);
+  assert.equal(stopAlert(mk([-1])).active, false);
+});
+
+test('missingJournal y dayAlerts', () => {
+  assert.deepEqual(missingJournal({ mood: 'Neutral', followed: 'si', lesson: 'x' }), []);
+  assert.equal(missingJournal({}).length, 3);
+  const es = groupEntries([T(1, '2026-09-18T14:00:00', -1), T(2, '2026-09-18T15:00:00', -2)], { tzOffset: 0 });
+  assert.equal(dayAlerts(es).get('2026-09-18').alert.active, true);
+});
+
+test('buildInsights avisa si sigues operando tras el ALTO', () => {
+  const trades = [T(1, '2026-09-18T14:00:00', -10), T(2, '2026-09-18T15:00:00', -10), T(3, '2026-09-18T16:00:00', -20)];
+  const entries = groupEntries(trades, { tzOffset: 0 });
+  const ins = buildInsights(trades, computeStats(trades, []), { entries });
+  assert.ok(ins.some((i) => i.id === 'alto' && i.level === 'alta'));
+});

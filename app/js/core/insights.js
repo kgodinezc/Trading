@@ -12,7 +12,7 @@ export function fmtDuration(sec) {
   return `${(sec / 3600).toFixed(1)} h`;
 }
 
-export function buildInsights(trades, stats, { fmt = (x) => x.toFixed(2), startBalance = null } = {}) {
+export function buildInsights(trades, stats, { fmt = (x) => x.toFixed(2), startBalance = null, entries = null } = {}) {
   const out = [];
   const add = (level, id, title, detail, tip) => out.push({ level, id, title, detail, tip });
   const s = stats.all;
@@ -22,6 +22,29 @@ export function buildInsights(trades, stats, { fmt = (x) => x.toFixed(2), startB
     add('info', 'muestra', 'Muestra pequeña',
       `Solo hay ${s.n} operaciones: las conclusiones pueden cambiar mucho con más datos.`,
       'Sigue subiendo tus reportes; los patrones se vuelven fiables a partir de ~100 operaciones.');
+  }
+
+  // 0. Seguir operando tras dos entradas negativas seguidas (tu regla de ALTO)
+  if (entries && entries.length) {
+    const byDay = new Map();
+    for (const e of entries) (byDay.get(e.day) || byDay.set(e.day, []).get(e.day)).push(e);
+    let alertDays = 0, after = [];
+    for (const list of byDay.values()) {
+      const i = list.findIndex((e, k) => k > 0 && list[k - 1].net < 0 && e.net < 0);
+      if (i < 0) continue;
+      alertDays++;
+      after.push(...list.slice(i + 1));
+    }
+    if (alertDays) {
+      const lost = after.reduce((a, e) => a + e.net, 0);
+      if (after.length && lost < 0) {
+        add('alta', 'alto', `Sigues operando después de dos entradas negativas seguidas (${alertDays} ${alertDays === 1 ? 'día' : 'días'})`,
+          `Las ${after.length} entradas posteriores a la señal de ALTO suman ${fmt(lost)}.`,
+          'Respeta la regla: al segundo negativo consecutivo, deja de operar y completa la bitácora del día.');
+      } else if (!after.length) {
+        add('ok', 'alto', 'Respetas la regla de ALTO', `En ${alertDays} ${alertDays === 1 ? 'día' : 'días'} con dos entradas negativas seguidas no abriste más entradas.`, 'Sigue así.');
+      }
+    }
   }
 
   // 1. Matemática del sistema: win rate vs. payoff

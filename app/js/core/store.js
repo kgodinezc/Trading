@@ -8,6 +8,7 @@ export const emptyState = () => ({
   accounts: {},        // número de cuenta -> { account, trades: {id: trade}, balanceOps: {id: op}, reported }
   journal: {},         // 'YYYY-MM-DD' -> entrada de bitácora
   tradeNotes: {},      // 'cuenta:id' -> { tags: [], note }
+  entryNotes: {},      // 'cuenta:id de la primera operación cerrada de la entrada' -> { tags: [], note }
   settings: { unit: 'usd', active: null },
 });
 

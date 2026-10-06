@@ -20,6 +20,8 @@ Publicación: Settings → Pages → Source: *GitHub Actions* (el workflow publi
 - **Insights**: esperanza negativa, falta de Stop Loss, efecto disposición, trading de revancha, subir lote tras perder,
   exceso de posiciones simultáneas, sobreoperación, mejores/peores horas, drawdown y riesgo por operación.
 - **Calculadora de lote**: lote según % de riesgo, precio de entrada y Stop Loss (valor por lote deducido de tus operaciones), con TP por ratio R:B y win rate mínimo.
+- **Entradas**: las operaciones cerradas dentro de una ventana de 30 min (ajustable) se agrupan como **una entrada**, tal como en tu hoja de Excel; cada entrada se documenta con etiquetas y notas. El día de trading se calcula en hora local (servidor Exness = GMT; Costa Rica = −6).
+- **Alerta de ALTO**: si dos entradas consecutivas del día cierran en negativo, aparece un aviso para que dejes de operar y completes la bitácora (estado emocional, si seguiste el plan y la lección).
 - **Bitácora**: calendario con P/L, plan previo, estado emocional, ¿seguí mi plan?, lecciones, notas y etiquetas por operación,
   y cruce de disciplina vs. resultado. Respaldo/restauración en JSON.
 - Cuentas **cent (USC)**: se muestran en USD (÷100) o en centavos.

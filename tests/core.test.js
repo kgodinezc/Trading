@@ -128,3 +128,44 @@ test('store: unir reportes no duplica operaciones y el respaldo se restaura', ()
   assert.equal(Object.keys(restored.accounts).length, 1);
   assert.throws(() => importBackup(emptyState(), '{"x":1}'), /respaldo/);
 });
+
+import { positionSize, inferValuePerLot, targets } from '../app/js/core/risk.js';
+
+test('positionSize: lote = riesgo / (distancia × valor por lote)', () => {
+  // Balance 10 000, 1% = 100; distancia 5; 20 por lote y punto → 100 / (5×20) = 1.00 lote
+  const r = positionSize({ balance: 10000, riskPct: 1, entry: 100, sl: 95, valuePerLot: 20 });
+  assert.equal(r.side, 'buy');
+  assert.equal(r.riskAmount, 100);
+  assert.equal(r.lot, 1);
+  assert.equal(r.actualRisk, 100);
+  assert.equal(positionSize({ balance: 10000, riskPct: 1, entry: 100, sl: 105, valuePerLot: 20 }).side, 'sell');
+});
+
+test('positionSize: redondea hacia abajo y avisa si el mínimo excede el riesgo', () => {
+  const r = positionSize({ balance: 10000, riskPct: 1, entry: 100, sl: 93, valuePerLot: 20 });
+  assert.equal(r.lot, 0.71); // 100/140 = 0.714…
+  assert.ok(r.actualRiskPct <= 1);
+  const small = positionSize({ balance: 100, riskPct: 1, entry: 100, sl: 90, valuePerLot: 20 });
+  assert.equal(small.lot, 0.01);
+  assert.equal(small.belowMin, true);
+  assert.ok(small.actualRiskPct > 1);
+});
+
+test('positionSize valida entradas', () => {
+  assert.ok(positionSize({ balance: 0, riskPct: 1, entry: 1, sl: 2, valuePerLot: 1 }).error);
+  assert.ok(positionSize({ balance: 1, riskPct: 1, entry: 2, sl: 2, valuePerLot: 1 }).error);
+});
+
+test('inferValuePerLot deduce el valor del punto de operaciones pasadas', () => {
+  const mk = (i) => ({ symbol: 'XAUUSDc', volume: 0.3, move: 5, profit: 150, id: i });
+  assert.equal(inferValuePerLot([mk(1), mk(2), mk(3)], 'XAUUSDc'), 100);
+  assert.equal(inferValuePerLot([mk(1)], 'XAUUSDc'), null);
+});
+
+test('targets calcula TP por ratio y win rate mínimo', () => {
+  const t = targets(100, 95, [1, 2]);
+  assert.equal(t[0].tp, 105);
+  assert.equal(t[1].tp, 110);
+  assert.ok(Math.abs(t[1].breakevenWinRate - 1 / 3) < 1e-9);
+  assert.equal(targets(100, 105, [1])[0].tp, 95);
+});

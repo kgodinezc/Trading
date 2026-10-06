@@ -1,0 +1,12 @@
+{
+  "name": "trading-journal",
+  "version": "1.0.0",
+  "description": "Bitácora y estadísticas de trading a partir del reporte de historial de Exness (MT5). Todo se procesa en el navegador.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "npx --yes http-server app -p 8080 -c-1"
+  },
+  "license": "MIT"
+}

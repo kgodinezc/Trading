@@ -2,7 +2,7 @@ import { parseExnessReport, toMs } from './core/parser.js';
 import { computeStats, equityCurve, summarize, groupBy, day } from './core/stats.js';
 import { buildInsights, fmtDuration, WEEKDAYS } from './core/insights.js';
 import { positionSize, inferValuePerLot, targets } from './core/risk.js';
-import { groupEntries, localDay, toLocal, stopAlert, dayAlerts, missingJournal, DEFAULTS } from './core/entries.js';
+import { groupEntries, toLocal, stopAlert, dayAlerts, missingJournal, DEFAULTS } from './core/entries.js';
 import * as store from './core/store.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -21,8 +21,12 @@ const view = { period: 'all', from: '', to: '', symbol: '', calMonth: null, selD
 
 // ---------- datos y formato ----------
 const acc = () => state.accounts[state.settings.active];
-const allTrades = () => (acc() ? store.accountTrades(state, state.settings.active) : []);
-const allOps = () => (acc() ? store.accountOps(state, state.settings.active) : []);
+// Los reportes de Exness vienen en hora del servidor (GMT). Toda la app trabaja en hora y fecha locales (Costa Rica = UTC−6,
+// sin horario de verano): se convierten una sola vez aquí; lo guardado en el navegador no cambia.
+const tzOff = () => state.settings.tzOffset ?? DEFAULTS.tzOffset;
+const tzLabel = () => `UTC${tzOff() < 0 ? '−' : '+'}${Math.abs(tzOff())}`;
+const allTrades = () => (acc() ? store.accountTrades(state, state.settings.active) : []).map((t) => ({ ...t, openTime: toLocal(t.openTime, tzOff()), closeTime: toLocal(t.closeTime, tzOff()) }));
+const allOps = () => (acc() ? store.accountOps(state, state.settings.active) : []).map((b) => ({ ...b, time: b.time ? toLocal(b.time, tzOff()) : b.time }));
 const divisor = () => (acc()?.account.isCent && state.settings.unit === 'usd' ? 100 : 1);
 const cur = () => (divisor() === 100 ? 'USD' : acc()?.account.currency || '');
 
@@ -46,9 +50,9 @@ function toast(msg) {
 }
 
 // ---------- entradas (ventanas de N minutos) ----------
-const entryCfg = () => ({ windowMin: state.settings.windowMin ?? DEFAULTS.windowMin, tzOffset: state.settings.tzOffset ?? DEFAULTS.tzOffset });
+const entryCfg = () => ({ windowMin: state.settings.windowMin ?? DEFAULTS.windowMin, tzOffset: 0 }); // los registros ya están en hora local
 const entriesOf = (ts) => groupEntries(ts, entryCfg());
-const localHM = (iso) => toLocal(iso, entryCfg().tzOffset).slice(11, 16);
+const localHM = (iso) => iso.slice(11, 16);
 const entryKey = (id) => store.noteKey(state.settings.active, id);
 
 // Alerta global: en el último día operado (o el anterior) hubo dos entradas negativas seguidas y la bitácora está incompleta.
@@ -199,7 +203,7 @@ function renderStats(el, ts, st) {
       <tr><td>Factor de beneficio</td><td>${Number.isFinite(entSum.profitFactor) ? num2(entSum.profitFactor) : '∞'}</td></tr>
       <tr><td>Días con alerta de ALTO (2 negativas seguidas)</td><td class="${stopDays ? 'neg' : ''}">${stopDays}</td></tr>
     </tbody></table></div>
-    ${groupTable('Por hora de entrada (servidor)', hours, (k) => `${String(k).padStart(2, '0')}:00`, { id: 'c-hour' })}
+    ${groupTable(`Por hora de entrada (hora de Costa Rica)`, hours, (k) => `${String(k).padStart(2, '0')}:00`, { id: 'c-hour' })}
     ${groupTable('Por día de la semana', st.byWeekday, (k) => WEEKDAYS[k], { id: 'c-wd' })}
     ${groupTable('Por duración', st.byDuration, (k) => k, { id: 'c-dur' })}
     ${groupTable('Por dirección', st.bySide, (k) => (k === 'buy' ? 'Compra' : 'Venta'))}
@@ -244,10 +248,9 @@ function renderOps(el, ts) {
 // ---------- bitácora ----------
 function renderBitacora(el) {
   const ts = allTrades();
-  const tz = entryCfg().tzOffset;
-  const byDay = new Map(groupBy(ts, (t) => localDay(t.closeTime, tz)).map((g) => [g.key, g]));
+  const byDay = new Map(groupBy(ts, (t) => day(t.closeTime)).map((g) => [g.key, g]));
   const alerts = dayAlerts(entriesOf(ts));
-  const last = ts.length ? localDay(ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), ''), tz) : new Date().toISOString().slice(0, 10);
+  const last = ts.length ? day(ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), '')) : new Date().toISOString().slice(0, 10);
   if (!view.calMonth) view.calMonth = last.slice(0, 7);
   if (!view.selDay) view.selDay = last;
   const [y, m] = view.calMonth.split('-').map(Number);
@@ -266,16 +269,15 @@ function renderBitacora(el) {
   const monthName = first.toLocaleDateString('es-CR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   el.innerHTML = `<div class="card" style="margin-bottom:12px"><div class="row">
       <label class="inline">Una entrada = operaciones cerradas dentro de <input type="number" min="1" id="winMin" value="${entryCfg().windowMin}" style="width:70px"> min</label>
-      <label class="inline">Hora local = servidor <input type="number" step="1" id="tzOff" value="${entryCfg().tzOffset}" style="width:70px"> h</label>
-      <span class="note">Exness usa GMT; Costa Rica = −6. Define también el día de cada operación.</span></div></div>
+      <span class="note">Horas y fechas en hora de Costa Rica (${tzLabel()}); se cambia en la pestaña Datos.</span></div></div>
     <div class="grid cols2">
     <div class="card"><div class="row" style="justify-content:space-between"><button class="btn ghost sm" id="prevM">◀</button><b>${monthName[0].toUpperCase() + monthName.slice(1)}</b><button class="btn ghost sm" id="nextM">▶</button></div>
       <p class="note" style="text-align:center">Resultado del mes: <b class="${cls(monthNet)}">${money(monthNet, { sign: true })}</b></p>
       <div class="cal">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d) => `<div class="dow">${d}</div>`).join('')}${cells}</div></div>
     <div id="dayPanel"></div></div>
     <div id="journalStats" style="margin-top:12px"></div>`;
-  const setCfg = () => { const w = parseInt($('#winMin').value, 10), t = parseInt($('#tzOff').value, 10); if (w > 0) state.settings.windowMin = w; if (Number.isFinite(t)) state.settings.tzOffset = t; persist(); render(); };
-  $('#winMin').addEventListener('change', setCfg); $('#tzOff').addEventListener('change', setCfg);
+  const setCfg = () => { const w = parseInt($('#winMin').value, 10); if (w > 0) state.settings.windowMin = w; persist(); render(); };
+  $('#winMin').addEventListener('change', setCfg);
   $('#prevM').onclick = () => { shiftMonth(-1); };
   $('#nextM').onclick = () => { shiftMonth(1); };
   el.querySelectorAll('[data-day]').forEach((b) => { b.onclick = () => { view.selDay = b.dataset.day; renderBitacora(el); }; });
@@ -469,11 +471,15 @@ function renderDatos(el) {
     <div class="drop" id="drop"><p><b>Arrastra aquí tu archivo .xlsx</b> o</p><p><input type="file" id="file" accept=".xlsx,.xls" multiple></p>
     <p class="note">Reporte "Trade History Report" de MetaTrader 5: pestaña <i>Historial</i> → clic derecho → <i>Informe</i> → <i>Abrir XML (MS Excel)</i>.<br>Puedes subir reportes nuevos cuando quieras: las operaciones ya cargadas no se duplican.</p></div>
     <div id="importMsg"></div></div>
+  <div class="card" style="margin-top:12px"><h3>Zona horaria</h3>
+    <label class="inline">Hora local = hora del servidor del reporte <input type="number" step="1" id="tzOff" value="${tzOff()}" style="width:70px"> h</label>
+    <p class="note">Exness registra en GMT; Costa Rica es UTC−6 todo el año (sin horario de verano), por eso el valor es −6. Con este ajuste las horas <b>y las fechas</b> se muestran en hora de Costa Rica; los datos guardados no se modifican.</p></div>
   <div class="card" style="margin-top:12px"><h3>Cuentas cargadas</h3>
-    ${accs.length ? `<table><thead><tr><th>Cuenta</th><th>Tipo</th><th>Operaciones</th><th>Último cierre</th><th></th></tr></thead><tbody>${accs.map((a) => { const ts = Object.values(a.trades); const last = ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), ''); return `<tr><td>${esc(a.account.number)}</td><td>${esc(a.account.name)} (${esc(a.account.currency)}, ${esc(a.account.mode)})</td><td>${ts.length}</td><td>${last.replace('T', ' ')}</td><td><button class="btn danger sm" data-delacc="${esc(a.account.number)}">Eliminar</button></td></tr>`; }).join('')}</tbody></table>` : '<p class="note">Todavía no has cargado ninguna cuenta.</p>'}</div>
+    ${accs.length ? `<table><thead><tr><th>Cuenta</th><th>Tipo</th><th>Operaciones</th><th>Último cierre</th><th></th></tr></thead><tbody>${accs.map((a) => { const ts = Object.values(a.trades); const last = ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), ''); return `<tr><td>${esc(a.account.number)}</td><td>${esc(a.account.name)} (${esc(a.account.currency)}, ${esc(a.account.mode)})</td><td>${ts.length}</td><td>${toLocal(last, tzOff()).replace('T', ' ')}</td><td><button class="btn danger sm" data-delacc="${esc(a.account.number)}">Eliminar</button></td></tr>`; }).join('')}</tbody></table>` : '<p class="note">Todavía no has cargado ninguna cuenta.</p>'}</div>
   <div class="card" style="margin-top:12px"><h3>Respaldo</h3>
     <p class="note">Tus datos viven solo en este navegador (si borras los datos del sitio, se pierden). Descarga un respaldo de vez en cuando; incluye operaciones, bitácora y notas.</p>
     <div class="row"><button class="btn" id="expBtn">Descargar respaldo (.json)</button><label class="btn ghost">Restaurar respaldo<input type="file" id="impFile" accept=".json" hidden></label></div></div>`;
+  $('#tzOff').addEventListener('change', (e) => { const t = parseInt(e.target.value, 10); if (Number.isFinite(t) && t >= -12 && t <= 14) { state.settings.tzOffset = t; persist(); view.calMonth = null; view.selDay = null; setupSelectors(); } });
   const drop = $('#drop');
   ['dragover', 'dragenter'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
@@ -521,7 +527,7 @@ function download(name, text, type) {
   a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 function exportCsv(ts) {
-  const head = ['id', 'simbolo', 'tipo', 'lote', 'apertura', 'precio_entrada', 'cierre', 'precio_salida', 'sl', 'tp', 'comision', 'swap', 'resultado', 'etiquetas', 'nota'];
+  const head = ['id', 'simbolo', 'tipo', 'lote', 'apertura_hora_local', 'precio_entrada', 'cierre_hora_local', 'precio_salida', 'sl', 'tp', 'comision', 'swap', 'resultado', 'etiquetas', 'nota'];
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = ts.map((t) => { const n = state.tradeNotes[store.noteKey(state.settings.active, t.id)] || {}; return [t.id, t.symbol, t.side, t.volume, t.openTime, t.openPrice, t.closeTime, t.closePrice, t.sl ?? '', t.tp ?? '', t.commission, t.swap, t.net, (n.tags || []).join('|'), n.note || ''].map(q).join(','); });
   download('operaciones.csv', '﻿' + [head.join(','), ...lines].join('\n'), 'text/csv');
@@ -529,6 +535,7 @@ function exportCsv(ts) {
 
 // ---------- ciclo principal ----------
 function render() {
+  const fz = $('#tzNote'); if (fz) fz.textContent = `Horas y fechas en hora de Costa Rica (${tzLabel()}).`;
   charts.forEach((c) => c.destroy()); charts = [];
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== `view-${tab}`; });
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));

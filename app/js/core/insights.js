@@ -139,17 +139,17 @@ export function buildInsights(trades, stats, { fmt = (x) => x.toFixed(2), startB
     }
   }
 
-  // 8. Mejores y peores horas / días (hora del servidor MT5)
+  // 8. Mejores y peores horas / días (hora local)
   const hrs = stats.byHour.filter((h) => h.n >= MIN_GROUP);
   if (hrs.length >= 2) {
     const worst = [...hrs].sort((a, b) => a.net - b.net)[0], best = [...hrs].sort((a, b) => b.net - a.net)[0];
     if (worst.net < 0) {
-      add('media', 'hora-mala', `Evita operar a las ${String(worst.key).padStart(2, '0')}:00 (hora del servidor)`,
+      add('media', 'hora-mala', `Evita operar a las ${String(worst.key).padStart(2, '0')}:00 (hora de Costa Rica)`,
         `Esa hora acumula ${worst.n} operaciones con resultado ${fmt(worst.net)} y win rate ${pct(worst.winRate)}.`,
         'Revisa si coincide con una sesión o publicación de noticias en la que tu estrategia no funciona; considera no operar en esa franja.');
     }
     if (best.net > 0) {
-      add('ok', 'hora-buena', `Tu mejor franja: ${String(best.key).padStart(2, '0')}:00 (hora del servidor)`,
+      add('ok', 'hora-buena', `Tu mejor franja: ${String(best.key).padStart(2, '0')}:00 (hora de Costa Rica)`,
         `${best.n} operaciones, resultado ${fmt(best.net)}, win rate ${pct(best.winRate)}.`, 'Concentra tu operativa donde tienes ventaja demostrada.');
     }
   }

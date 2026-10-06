@@ -1,0 +1,9 @@
+# Datos personales de trading: NUNCA subir al repositorio (es público)
+*.xlsx
+*.xls
+*.respaldo.json
+bitacora-trading-*.json
+operaciones.csv
+datos/
+node_modules/
+.DS_Store

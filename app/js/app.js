@@ -3,6 +3,7 @@ import { computeStats, equityCurve, summarize, groupBy, day } from './core/stats
 import { buildInsights, fmtDuration, WEEKDAYS } from './core/insights.js';
 import { positionSize, inferValuePerLot, targets } from './core/risk.js';
 import { groupEntries, toLocal, stopAlert, dayAlerts, missingJournal, DEFAULTS } from './core/entries.js';
+import { loadNews, renderNews, upcomingAlert, newestPublished } from './news-view.js';
 import * as store from './core/store.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -16,6 +17,7 @@ const MOODS = [['😄', 'Confiado'], ['😐', 'Neutral'], ['😰', 'Ansioso'], [
 const PLAN = [['si', 'Sí'], ['parcial', 'Parcial'], ['no', 'No']];
 
 let tab = 'resumen';
+let newsSeenPending = '';
 let charts = [];
 const view = { period: 'all', from: '', to: '', symbol: '', calMonth: null, selDay: null, showAll: false };
 
@@ -68,6 +70,13 @@ function pendingStop() {
     if (info.alert.active && missing.length) return { day: d, alert: info.alert, missing };
   }
   return null;
+}
+function renderNewsBar() {
+  const bar = $('#newsBar'), a = upcomingAlert(tzOff());
+  if (!a) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.innerHTML = `⚠️ <b>Noticia de alto impacto:</b> ${esc(a.title)} (USD) ${a.past ? `salió hace ${-a.min} min` : `a las ${a.when} — en ${a.min} min`}. Evita abrir entradas cerca de la publicación: el spread y el deslizamiento se disparan. <button class="btn sm" id="newsGo">Ver noticias</button>`;
+  $('#newsGo').onclick = () => { tab = 'noticias'; render(); };
 }
 function renderAlertBar() {
   const bar = $('#alertBar'), p = pendingStop();
@@ -498,6 +507,11 @@ function renderDatos(el) {
     for (const k of Object.keys(state.tradeNotes)) if (k.startsWith(`${n}:`)) delete state.tradeNotes[k];
     if (state.settings.active === n) state.settings.active = Object.keys(state.accounts)[0] || null;
     persist(); init();
+// Noticias: carga inicial y refresco cada 5 min (el archivo lo regenera GitHub Actions)
+const refreshNews = async () => { await loadNews(); if (tab === 'noticias' && !document.querySelector('#fQ:focus')) render(); else renderNewsBar(); };
+refreshNews();
+setInterval(() => { if (!document.hidden) refreshNews(); }, 5 * 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshNews(); });
   }));
 }
 
@@ -539,13 +553,22 @@ function render() {
   charts.forEach((c) => c.destroy()); charts = [];
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== `view-${tab}`; });
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
-  $('#filters').hidden = ['bitacora', 'datos', 'calc'].includes(tab) || !allTrades().length;
+  $('#filters').hidden = ['bitacora', 'datos', 'calc', 'noticias'].includes(tab) || !allTrades().length;
   $('#filters').classList.toggle('is-custom', view.period === 'custom');
   renderAlertBar();
+  renderNewsBar();
   const el = $(`#view-${tab}`);
   if (tab === 'datos') return renderDatos(el);
   if (tab === 'bitacora') return renderBitacora(el);
   if (tab === 'calc') return renderCalc(el);
+  if (tab === 'noticias') {
+    const prefs = (state.settings.news ||= { hours: 24, only: 'relevant', bias: 'all', usdOnly: true, highOnly: false });
+    const lastSeen = state.settings.newsSeen || '';
+    renderNews(el, { prefs, save: persist, tzOff, tzLabel, lastSeen });
+    const newest = newestPublished();
+    if (newest && newest > lastSeen) { newsSeenPending = newest; }
+    return;
+  }
   const ts = filtered();
   const st = computeStats(ts, []);
   const b = dateBounds();
@@ -579,7 +602,11 @@ function init() {
   setupSelectors();
 }
 
-$('#tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) { tab = b.dataset.tab; render(); } });
+$('#tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-tab]'); if (!b) return;
+  if (tab === 'noticias' && newsSeenPending) { state.settings.newsSeen = newsSeenPending; persist(); newsSeenPending = ''; }
+  tab = b.dataset.tab; render();
+});
 document.addEventListener('click', (e) => {
   const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); tab = g.dataset.goto; render(); }
   const n = e.target.closest('[data-note]'); if (n) openNote(n.dataset.note);
@@ -594,3 +621,8 @@ $('#symbolSel').addEventListener('change', (e) => { view.symbol = e.target.value
 window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
 
 init();
+// Noticias: carga inicial y refresco cada 5 min (el archivo lo regenera GitHub Actions)
+const refreshNews = async () => { await loadNews(); if (tab === 'noticias' && !document.querySelector('#fQ:focus')) render(); else renderNewsBar(); };
+refreshNews();
+setInterval(() => { if (!document.hidden) refreshNews(); }, 5 * 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshNews(); });

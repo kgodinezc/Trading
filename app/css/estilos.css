@@ -96,3 +96,6 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 .entry details table { margin-top: 6px; }
 label.inline { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-weight: 400; font-size: 13px; color: var(--ink); }
 .entry .pill { justify-self: start; }
+.news-bar { background: var(--warn-bg); color: var(--warn); border-bottom: 2px solid var(--warn); padding: 10px 16px; font-size: 14px; }
+.news-bar .btn { margin-left: 8px; background: var(--warn); color: #fff; }
+.ins a { color: inherit; text-decoration: none; } .ins a:hover { text-decoration: underline; }

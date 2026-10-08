@@ -5,7 +5,7 @@ const W = '(?:\\w+ ){0,2}';
 // score > 0: favorece al oro (alcista); score < 0: lo presiona (bajista)
 const RULES = [
   // Fed y tasas
-  { topic: 'Fed y tasas', score: -2, re: /\b(no|fewer|less|delays?|delayed|rules? out|dims?|pares?|pared|pushes? back on|scal(es|ed) back|fades?|fading)\b ?(?:\w+ ){0,3}(rate[- ])?cuts?\b|\b(rate[- ]cut|cut) (bets|expectations|hopes|odds) (fade|fall|wane|recede|drop|dim|slip)|\bhawkish\b|\b(raise|raises|raising|hike|hikes|hiking) (interest )?rates?\b|\brate hikes?\b|\bhigher[- ]for[- ]longer\b|\btighten(s|ing)?\b/,
+  { topic: 'Fed y tasas', score: -2, re: /\b(no|fewer|less|delays?|delayed|rules? out|dims?|pares?|pared|pushes? back on|scal(es|ed) back|fades?|fading)\b ?(?:\w+ ){0,3}(rate[- ])?cuts?\b|\b(rate[- ]cut|cut) (bets|expectations|hopes|odds) (fade|fall|wane|recede|drop|dim|slip)|\bhawkish\b|\b(raise|raises|raising|hike|hikes|hiking) (the |its )?(benchmark |interest |policy )?rates?\b|\brate[- ]hikes?\b|\b(rate|inflation) (hike )?fears\b|\brevives? (rate|inflation|hike)\b|\bhigher[- ]for[- ]longer\b|\btighten(s|ing)?\b/,
     why: 'Tono restrictivo o menos recortes de tasas: sube el rendimiento real y el dólar, presión bajista para el oro.' },
   { topic: 'Fed y tasas', score: 2, re: /\bdovish\b|\b(rate cuts?|cuts? (interest )?rates?|cutting rates|rate-cut)\b|\b(more|further|monetary) easing\b|\bpauses? (rate )?hikes?\b|\bpivot\b/,
     why: 'Expectativa de recortes o tono moderado de la Fed: baja el rendimiento real, favorable al oro.', negatedBy: 0 },
@@ -17,6 +17,8 @@ const RULES = [
   // Rendimientos
   { topic: 'Rendimientos', score: 2, re: /\b(treasury |bond |us |10-year |2-year )?yields?\b[^,;.]{0,30}\b(fall|falls|fell|drop|drops|dropped|slip|slips|slipped|decline|declines|declined|retreat|retreats|tumble|tumbles|ease|eases|eased|lower)\b/,
     why: 'Caen los rendimientos de los bonos: baja el costo de oportunidad de tener oro.' },
+  { topic: 'Rendimientos', score: -2, re: /\b(yields?)\b[^,;.]{0,30}\b(hit|hits|hitting|test|tests|testing|reach|reaches|reaching)\b[^,;.]{0,25}\bhighs?\b|\bbond (sell-?off|rout|slump)\b|\bsell-?off in (treasuries|bonds)\b/,
+    why: 'Los rendimientos de los bonos en máximos o con ventas fuertes de bonos: aumenta el costo de oportunidad del oro.' },
   { topic: 'Rendimientos', score: -2, re: /\b(treasury |bond |us |10-year |2-year )?yields?\b[^,;.]{0,30}\b(rise|rises|rose|jump|jumps|jumped|climb|climbs|climbed|surge|surges|surged|spike|spikes|higher|hit highs?)\b/,
     why: 'Suben los rendimientos de los bonos: aumenta el costo de oportunidad del oro.' },
   // Datos EE. UU.: débil = alcista; fuerte = bajista
@@ -45,9 +47,9 @@ const RULES = [
   { topic: 'ETF y posicionamiento', score: -1, re: /\b(etf|spdr|gld|ishares|holdings)\b[^,;.]{0,40}\b(outflows?|fall|falls|fell|drop\w*|declin\w*|redemptions?)\b|\boutflows? from gold\b|\b(speculators?|hedge funds?|money managers?)\b[^,;.]{0,40}\b(cut|reduce|trim|slash)\w*\b[^,;.]{0,30}\bgold\b/,
     why: 'Salidas de ETF o recorte de posiciones largas en oro: flujo vendedor.' },
   // Precio (momentum): descripción del movimiento, no una causa
-  { topic: 'Precio del oro', score: 1, re: /\b(gold|xau\/?usd|bullion)\b(?! (miners?|stocks?|shares))(?: (?:price|prices|futures|spot))?(?: \w+){0,2} (rises?|rose|jumps?|jumped|surges?|surged|climbs?|climbed|rall(y|ies|ied)|gains?|gained|advances?|hits? (a )?(record|all-time|\w+-?week high|high)|extends gains|rebounds?|soars?|spikes?)\b|\b(record|all-time) high\b[^,;.]{0,25}\bgold\b/,
+  { topic: 'Precio del oro', score: 1, re: /\b(gold|xau\/?usd|bullion)\b(?! (miners?|stocks?|shares))(?: (?:price|prices|futures|spot))?(?: \w+){0,2} (rises?|rose|jumps?|jumped|surges?|surged|climbs?|climbed|rall(y|ies|ied)|gains?|gained|advances?|hits? (a )?(record|all-time|\w+-?week high|high)|extends gains|rebounds?|soars?|spikes?)\b|\b(record|all-time) high\b[^,;.]{0,25}\bgold\b|\b(supports?|lifts?|boosts?|underpins?)\b[^,;.]{0,15}\b(gold|xau|bullion)\b/,
     why: 'El oro viene subiendo (momentum reciente; describe el movimiento, no su causa).' },
-  { topic: 'Precio del oro', score: -1, re: /\b(gold|xau\/?usd|bullion)\b(?! (miners?|stocks?|shares))(?: (?:price|prices|futures|spot))?(?: \w+){0,2} (falls?|fell|slips?|slipped|drops?|dropped|declines?|declined|retreats?|slides?|slid|tumbles?|sinks?|extends losses|pressured|weighs?)\b|\bprofit[- ]taking\b|\b\w+-?week low\b[^,;.]{0,25}\bgold\b/,
+  { topic: 'Precio del oro', score: -1, re: /\b(gold|xau\/?usd|bullion)\b(?! (miners?|stocks?|shares))(?: (?:price|prices|futures|spot))?(?: \w+){0,2} (falls?|fell|slips?|slipped|drops?|dropped|declines?|declined|retreats?|slides?|slid|tumbles?|sinks?|extends losses|pressured|weighs?|plunges?|plunged|slumps?|slumped|crashes|sell-?off)\b|\b(gold|xau\/?usd|bullion)\b[^,;.]{0,40}\b(hits?|reach(es)?|touch(es)?|falls? to|drops? to|sinks? to|slumps? to)\b[^,;.]{0,25}\blows?\b|\b(pressure|weighs?|weighing|drags?|dragging|hurts?)\b[^,;.]{0,15}\b(on )?(gold|xau|bullion)\b|\bprofit[- ]taking\b|\b\w+-?week low\b[^,;.]{0,25}\bgold\b/,
     why: 'El oro viene cayendo (momentum reciente; describe el movimiento, no su causa).' },
   // Apetito por riesgo
   { topic: 'Riesgo (bolsas)', score: -1, re: /\b(stocks?|equities|wall street|s&p 500|nasdaq|dow)\b[^,;.]{0,30}\b(record|rall(y|ies|ied)|surge[sd]?|jump(s|ed)?|climb(s|ed)?)\b/,
@@ -57,6 +59,8 @@ const RULES = [
 ];
 
 const RELEVANT = /\b(gold|xau|bullion|silver|fed|fomc|powell|treasury|treasuries|dollar|dxy|inflation|jobs|payrolls|cpi|pce|tariffs?|opec|oil|ecb|boj|boe|central bank|rate cut|yields?|recession|geopolit\w*)\b/i;
+
+const STOCK_PROMO = /\((?:TSX|TSXV|NYSE|NASDAQ|ASX|LSE|CVE|NYSEAMERICAN)[:\s][A-Z.]+\)|\b(fair value|drill results|price target|analyst ratings?)\b/i;
 
 export function classify(item) {
   const text = `${item.title} ${item.summary || ''}`.toLowerCase().slice(0, 500);
@@ -86,7 +90,7 @@ export function classify(item) {
     bias, score, strength: bias === 'mixto' ? Math.min(3, Math.max(pos, -neg)) : strength,
     topics: [...new Set(used.map((r) => r.topic))],
     reasons: used.sort((a, b) => Math.abs(b.score) - Math.abs(a.score)).map((r) => ({ topic: r.topic, score: r.score, why: r.why })),
-    relevant: used.length > 0 || RELEVANT.test(text),
+    relevant: used.length > 0 || (RELEVANT.test(text) && !STOCK_PROMO.test(`${item.title}`)),
   };
 }
 

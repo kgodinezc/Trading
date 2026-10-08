@@ -101,3 +101,18 @@ test('build: une fuentes, deduplica, descarta antiguas y tolera fallos', async (
   const old = await build({ now: Date.parse('2026-10-20T00:00:00Z'), fetcher });
   assert.equal(old.items.length, 0); // todo es más viejo que 72 h
 });
+
+test('classify: titulares reales (Fed hawkish, rendimientos en máximos, oro en mínimos)', () => {
+  const c = (t) => classify({ title: t });
+  for (const t of [
+    'Gold price hits two-month low as oil surge revives rate fears',
+    'Gold futures slump to two-month low on stronger dollar, high yields',
+    'Treasury Yields Keep Hitting New Highs. Can Savers Still Cash In?',
+    'Fed policymakers divided over rate-hike logic in September, minutes show',
+    'All Fed officials backed vote to hike benchmark rate: FOMC minutes',
+    'The Pound slides back to the bottom of its range as the bond selloff resumes',
+    'Gold Analysis: Fed Minutes Keep Pressure on XAU/USD',
+  ]) assert.equal(c(t).bias, 'bajista', t);
+  assert.equal(c('Equinox Gold (TSX:EQX) Could Be 35% Below Fair Value After Strong Drill Results').relevant, false);
+  assert.equal(c('Fed minutes show some officials want to prepare for market stress').bias, 'neutral');
+});

@@ -2,6 +2,7 @@
 // Se ejecuta en GitHub Actions cada pocos minutos (los navegadores no pueden leer estos sitios por CORS).
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { classify } from '../app/js/core/newsimpact.js';
 import { parseFeed, parseCalendar, splitTitleSource, normTitle, isoUtc } from '../app/js/core/feed.js';
 
 const UA = 'Mozilla/5.0 (compatible; TradingJournalBot/1.0; +https://github.com/kgodinezc/Trading)';
@@ -65,6 +66,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   for (const s of data.sources) console.log(`${s.ok ? 'OK ' : 'ERR'} ${s.id.padEnd(12)} ${String(s.count).padStart(3)} items ${s.ms}ms ${s.error || ''}`);
   console.log(`calendario: ${data.calendarOk ? data.calendar.length + ' eventos' : 'ERR ' + data.calendarError}; noticias únicas: ${data.items.length}`);
   for (const e of data.calendar.filter((x) => x.country === 'USD' && x.impact !== 'low').slice(0, 12)) console.log(`  CAL ${e.date} ${e.time || 'sin hora'} [feed-raw→UTC] ${e.country} ${e.impact} ${e.title} prev=${e.previous} fc=${e.forecast}`);
+  console.log('--- muestra de clasificación (más recientes) ---');
+  for (const i of data.items.slice(0, 40)) { const c = classify(i); console.log(`${c.bias.padEnd(8)} ${String(c.score).padStart(3)} ${c.relevant ? 'R' : '-'} ${i.published.slice(5, 16)} [${i.source}] ${i.title.slice(0, 110)}`); }
   if (!data.sources.some((s) => s.ok) && !data.calendarOk) { console.error('Ninguna fuente respondió; no se actualiza news.json'); process.exit(1); }
   mkdirSync(new URL('../app/data/', import.meta.url), { recursive: true });
   writeFileSync(new URL('../app/data/news.json', import.meta.url), JSON.stringify(data));

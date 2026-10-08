@@ -12,11 +12,22 @@ export const emptyState = () => ({
   settings: { unit: 'usd', active: null },
 });
 
+// El estado emocional y la lección se quitaron de la bitácora: lo ya escrito se conserva dentro de "Qué debo mejorar".
+export function migrateJournal(state) {
+  for (const j of Object.values(state.journal || {})) {
+    if (!j || (!j.mood && !j.lesson)) { if (j) { delete j.mood; delete j.lesson; } continue; }
+    const extra = [j.lesson && `Lección: ${j.lesson}`, j.mood && `Ánimo: ${j.mood}`].filter(Boolean).join('\n');
+    j.improve = [j.improve, extra].filter((x) => x && String(x).trim()).join('\n');
+    delete j.mood; delete j.lesson;
+  }
+  return state;
+}
+
 export function load(storage) {
   try {
     const raw = storage.getItem(KEY);
     if (!raw) return emptyState();
-    return { ...emptyState(), ...JSON.parse(raw) };
+    return migrateJournal({ ...emptyState(), ...JSON.parse(raw) });
   } catch { return emptyState(); }
 }
 
@@ -50,7 +61,7 @@ export function exportBackup(state) { return JSON.stringify(state); }
 export function importBackup(state, json) {
   const data = JSON.parse(json);
   if (!data || typeof data !== 'object' || !data.accounts) throw new Error('El archivo no es un respaldo válido de esta aplicación.');
-  const base = { ...emptyState(), ...data };
+  const base = migrateJournal({ ...emptyState(), ...data });
   Object.keys(state).forEach((k) => delete state[k]);
   Object.assign(state, base);
   return state;

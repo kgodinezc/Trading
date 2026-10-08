@@ -52,7 +52,7 @@ export function stopAlert(dayEntries) {
 }
 
 // Campos que cuentan como "bitácora completa" para poder seguir operando.
-export const REQUIRED_JOURNAL = [['mood', 'estado emocional'], ['followed', 'si seguiste el plan'], ['lesson', 'la lección del día']];
+export const REQUIRED_JOURNAL = [['followed', 'si seguiste el plan'], ['improve', 'qué debes mejorar']];
 export const missingJournal = (j = {}) => REQUIRED_JOURNAL.filter(([k]) => !String(j[k] ?? '').trim()).map(([, label]) => label);
 
 export function dayAlerts(entries) {

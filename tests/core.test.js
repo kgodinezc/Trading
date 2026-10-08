@@ -121,9 +121,9 @@ test('store: unir reportes no duplica operaciones y el respaldo se restaura', ()
   assert.deepEqual(mergeReport(state, r), { account: '999', added: 3, updated: 0, total: 3 });
   assert.deepEqual(mergeReport(state, r), { account: '999', added: 0, updated: 3, total: 3 });
   assert.equal(accountTrades(state, '999').length, 3);
-  state.journal['2026-09-01'] = { lesson: 'x' };
+  state.journal['2026-09-01'] = { improve: 'x' };
   assert.equal(save(mem, state), true);
-  assert.equal(load(mem).journal['2026-09-01'].lesson, 'x');
+  assert.equal(load(mem).journal['2026-09-01'].improve, 'x');
   const restored = importBackup(emptyState(), exportBackup(state));
   assert.equal(Object.keys(restored.accounts).length, 1);
   assert.throws(() => importBackup(emptyState(), '{"x":1}'), /respaldo/);
@@ -205,8 +205,8 @@ test('stopAlert: dos entradas consecutivas negativas', () => {
 });
 
 test('missingJournal y dayAlerts', () => {
-  assert.deepEqual(missingJournal({ mood: 'Neutral', followed: 'si', lesson: 'x' }), []);
-  assert.equal(missingJournal({}).length, 3);
+  assert.deepEqual(missingJournal({ followed: 'si', improve: 'x' }), []);
+  assert.equal(missingJournal({}).length, 2);
   const es = groupEntries([T(1, '2026-09-18T14:00:00', -1), T(2, '2026-09-18T15:00:00', -2)], { tzOffset: 0 });
   assert.equal(dayAlerts(es).get('2026-09-18').alert.active, true);
 });
@@ -216,4 +216,20 @@ test('buildInsights avisa si sigues operando tras el ALTO', () => {
   const entries = groupEntries(trades, { tzOffset: 0 });
   const ins = buildInsights(trades, computeStats(trades, []), { entries });
   assert.ok(ins.some((i) => i.id === 'alto' && i.level === 'alta'));
+});
+
+test('migrateJournal conserva estado emocional y lección dentro de "Qué debo mejorar"', async () => {
+  const { migrateJournal } = await import('../app/js/core/store.js');
+  const st = emptyState();
+  st.journal['2026-09-01'] = { mood: 'Frustrado', lesson: 'Parar al segundo negativo', improve: 'Moví el SL', good: 'Cerré a tiempo' };
+  st.journal['2026-09-02'] = { lesson: 'Solo lección' };
+  st.journal['2026-09-03'] = { improve: 'Intacto' };
+  migrateJournal(st);
+  assert.equal(st.journal['2026-09-01'].improve, 'Moví el SL\nLección: Parar al segundo negativo\nÁnimo: Frustrado');
+  assert.equal(st.journal['2026-09-01'].good, 'Cerré a tiempo');
+  assert.equal(st.journal['2026-09-01'].mood, undefined);
+  assert.equal(st.journal['2026-09-02'].improve, 'Lección: Solo lección');
+  assert.equal(st.journal['2026-09-03'].improve, 'Intacto');
+  migrateJournal(st); // idempotente
+  assert.equal(st.journal['2026-09-02'].improve, 'Lección: Solo lección');
 });

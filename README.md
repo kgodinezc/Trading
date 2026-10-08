@@ -21,9 +21,9 @@ Publicación: Settings → Pages → Source: *GitHub Actions* (el workflow publi
   exceso de posiciones simultáneas, sobreoperación, mejores/peores horas, drawdown y riesgo por operación.
 - **Calculadora de lote**: lote según % de riesgo, precio de entrada y Stop Loss (valor por lote deducido de tus operaciones), con TP por ratio R:B y win rate mínimo.
 - **Entradas**: las operaciones cerradas dentro de una ventana de 30 min (ajustable) se agrupan como **una entrada**, tal como en tu hoja de Excel; cada entrada se documenta con etiquetas y notas. 
-- **Alerta de ALTO**: si dos entradas consecutivas del día cierran en negativo, aparece un aviso para que dejes de operar y completes la bitácora (estado emocional, si seguiste el plan y la lección).
+- **Alerta de ALTO**: si dos entradas consecutivas del día cierran en negativo, aparece un aviso para que dejes de operar y completes la bitácora (si seguiste el plan y qué debes mejorar).
 - **Noticias**: titulares del día y agenda económica (hora de Costa Rica) con una lectura automática de su impacto en el oro (▲ alcista / ▼ bajista / ◆ mixto), el porqué de cada lectura, un resumen del sesgo de las últimas 12 h, y un aviso en toda la app cuando se acerca una noticia USD de alto impacto. Se refresca sola cada 5 min.
-- **Bitácora**: calendario con P/L, plan previo, estado emocional, ¿seguí mi plan?, lecciones, notas y etiquetas por operación,
+- **Bitácora**: calendario con P/L, plan previo, ¿seguí mi plan?, qué hice bien, qué debo mejorar, notas y etiquetas por operación,
   y cruce de disciplina vs. resultado. Respaldo/restauración en JSON.
 - Cuentas **cent (USC)**: se muestran en USD (÷100) o en centavos.
 

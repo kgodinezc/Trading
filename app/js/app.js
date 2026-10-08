@@ -13,7 +13,6 @@ const state = store.load(storage);
 const persist = () => { if (!store.save(storage, state)) toast('⚠️ No se pudo guardar en el navegador (¿almacenamiento lleno o bloqueado?). Exporta un respaldo.'); };
 
 const TAGS = ['Setup válido', 'Sin SL', 'Moví el SL', 'Promedié', 'FOMO', 'Revancha', 'Sobreoperé', 'Noticias', 'Cerré por miedo', 'Fuera de horario'];
-const MOODS = [['😄', 'Confiado'], ['😐', 'Neutral'], ['😰', 'Ansioso'], ['😡', 'Frustrado'], ['🥱', 'Cansado']];
 const PLAN = [['si', 'Sí'], ['parcial', 'Parcial'], ['no', 'No']];
 
 let tab = 'resumen';
@@ -310,11 +309,9 @@ function renderDayPanel(byDay) {
     ${g ? `<p><b class="${cls(g.net)}">${money(g.net, { sign: true })}</b> · ${dayEntries.length} entradas · ${g.n} operaciones · win rate ${pct(g.winRate, 0)} · PF ${Number.isFinite(g.profitFactor) ? num2(g.profitFactor) : '∞'}</p>` : '<p class="note">Sin operaciones este día (puedes anotar tu plan o descanso igualmente).</p>'}
     <form class="form" id="jForm" autocomplete="off">
       <label>Plan previo (qué buscaré, zonas, límite de pérdida, número de operaciones)<textarea name="plan">${esc(j.plan)}</textarea></label>
-      <div><b style="font-size:13px">Estado emocional</b><div class="chips">${MOODS.map(([e, l]) => `<label><input type="radio" name="mood" value="${l}" ${j.mood === l ? 'checked' : ''} hidden><span>${e} ${l}</span></label>`).join('')}</div></div>
       <div><b style="font-size:13px">¿Seguí mi plan?</b><div class="chips">${radio('followed', PLAN, j.followed).replace(/<input/g, '<input hidden')}</div></div>
       <label>Qué hice bien<textarea name="good">${esc(j.good)}</textarea></label>
-      <label>Qué debo mejorar<textarea name="improve">${esc(j.improve)}</textarea></label>
-      <label>Lección / regla para mañana<textarea name="lesson">${esc(j.lesson)}</textarea></label>
+      <label>Qué debo mejorar<textarea name="improve" placeholder="Errores, lección / regla para mañana, cómo me sentí…">${esc(j.improve)}</textarea></label>
       <label>Calificación del día (disciplina, no resultado)
         <select name="rating"><option value="">–</option>${[1, 2, 3, 4, 5].map((n) => `<option ${String(j.rating) === String(n) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <div class="note" id="saved"></div>
@@ -348,8 +345,8 @@ function renderJournalStats(byDay) {
     }
     for (const [k, v] of m) rows.push(`<tr><td>${label}: ${esc(({ si: 'Sí', parcial: 'Parcial', no: 'No' }[k]) || k)}</td><td>${v.length}</td><td class="${cls(v.reduce((a, b) => a + b, 0) / v.length)}">${money(v.reduce((a, b) => a + b, 0) / v.length, { sign: true })}</td></tr>`);
   };
-  agg('followed', 'Seguí el plan'); agg('mood', 'Ánimo'); agg('rating', 'Calificación');
-  $('#journalStats').innerHTML = `<div class="card"><h3>Qué dice tu bitácora</h3>${rows.length ? `<table><thead><tr><th></th><th>Días</th><th>Resultado medio/día</th></tr></thead><tbody>${rows.join('')}</tbody></table><p class="note">Con pocos días las medias son anecdóticas; cuanto más completes la bitácora, más útil se vuelve.</p>` : '<p class="note">Completa el plan, ánimo y si seguiste el plan en los días con operaciones: aquí verás cómo se relacionan con tu resultado.</p>'}<p class="note">${entries.length} entradas de bitácora.</p></div>`;
+  agg('followed', 'Seguí el plan'); agg('rating', 'Calificación');
+  $('#journalStats').innerHTML = `<div class="card"><h3>Qué dice tu bitácora</h3>${rows.length ? `<table><thead><tr><th></th><th>Días</th><th>Resultado medio/día</th></tr></thead><tbody>${rows.join('')}</tbody></table><p class="note">Con pocos días las medias son anecdóticas; cuanto más completes la bitácora, más útil se vuelve.</p>` : '<p class="note">Completa el plan y si seguiste el plan en los días con operaciones: aquí verás cómo se relacionan con tu resultado.</p>'}<p class="note">${entries.length} entradas de bitácora.</p></div>`;
 }
 
 

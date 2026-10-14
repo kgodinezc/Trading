@@ -41,24 +41,8 @@ export function groupEntries(trades, { windowMin = DEFAULTS.windowMin, tzOffset 
   });
 }
 
-// Alerta "ALTO": dos entradas consecutivas del mismo día con resultado negativo.
-export function stopAlert(dayEntries) {
-  for (let i = 1; i < dayEntries.length; i++) {
-    if (dayEntries[i - 1].net < 0 && dayEntries[i].net < 0) {
-      return { active: true, at: dayEntries[i].index, entries: [dayEntries[i - 1].index, dayEntries[i].index], loss: dayEntries[i - 1].net + dayEntries[i].net };
-    }
-  }
-  return { active: false };
-}
-
-// Campos que cuentan como "bitácora completa" para poder seguir operando.
-export const REQUIRED_JOURNAL = [['followed', 'si seguiste el plan'], ['improve', 'qué debes mejorar']];
-export const missingJournal = (j = {}) => REQUIRED_JOURNAL.filter(([k]) => !String(j[k] ?? '').trim()).map(([, label]) => label);
-
-export function dayAlerts(entries) {
+export function entriesByDay(entries) {
   const byDay = new Map();
   for (const e of entries) (byDay.get(e.day) || byDay.set(e.day, []).get(e.day)).push(e);
-  const out = new Map();
-  for (const [d, list] of byDay) out.set(d, { entries: list, alert: stopAlert(list) });
-  return out;
+  return byDay;
 }

@@ -23,6 +23,70 @@ export async function loadNews() {
   return data;
 }
 
+// ---- Actualización a demanda ----
+// GitHub ejecuta el cron de forma irregular (a veces cada varias horas). Con un token propio (guardado solo en este
+// navegador y fuera de los respaldos) el botón pide la actualización al instante mediante la API de GitHub.
+const TOKEN_KEY = 'trading-journal.gh-token';
+const LAST_KEY = 'trading-journal.gh-last-dispatch';
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* sin almacenamiento */ } };
+export const getToken = () => lsGet(TOKEN_KEY) || '';
+export const setToken = (t) => lsSet(TOKEN_KEY, t ? t.trim() : null);
+
+export function repoSlug() {
+  const m = /^([a-z0-9-]+)\.github\.io$/i.exec(location.hostname);
+  const repo = location.pathname.split('/').filter(Boolean)[0];
+  return m && repo ? `${m[1]}/${repo}` : 'kgodinezc/Trading';
+}
+
+let busy = false, notice = null;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const isRefreshing = () => busy;
+const ageMin = (now = Date.now()) => (data ? Math.round((now - ms(data.generatedAt)) / 60000) : null);
+
+async function dispatchWorkflow(token) {
+  const r = await fetch(`https://api.github.com/repos/${repoSlug()}/actions/workflows/pages.yml/dispatches`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref: 'main' }),
+  });
+  if (r.status === 204) return null;
+  if (r.status === 401) return 'El token no es válido o venció. Genera uno nuevo y vuelve a pegarlo.';
+  if (r.status === 403 || r.status === 404) return 'El token no tiene permiso para este repositorio: debe ser de tipo fine-grained, solo del repositorio Trading, con "Actions: Read and write".';
+  return `GitHub respondió ${r.status}.`;
+}
+
+// Relee el archivo; si no hay datos más nuevos y hay token, pide la actualización y espera a que se publique (≈1 min).
+export async function refreshNow(onStatus = () => {}) {
+  if (busy) return { busy: true };
+  busy = true;
+  try {
+    const before = data ? data.generatedAt : '';
+    await loadNews();
+    if (data && data.generatedAt !== before) return { changed: true };
+    const token = getToken();
+    if (!token) return { changed: false, needsToken: true };
+    onStatus('Pidiendo la actualización a GitHub…');
+    const err = await dispatchWorkflow(token);
+    if (err) return { changed: false, error: err };
+    lsSet(LAST_KEY, String(Date.now()));
+    for (let i = 1; i <= 24; i++) {
+      onStatus(`GitHub está descargando y publicando las noticias… ${i * 10} s (suele tardar ~1 min)`);
+      await sleep(10000);
+      const prev = data ? data.generatedAt : '';
+      await loadNews();
+      if (data && data.generatedAt !== prev) return { changed: true };
+    }
+    return { changed: false, timeout: true };
+  } finally { busy = false; }
+}
+
+// Al abrir la pestaña con datos viejos y token guardado, se pide la actualización sola (máx. una vez cada 10 min).
+export function shouldAutoRefresh(now = Date.now()) {
+  const last = Number(lsGet(LAST_KEY) || 0);
+  return !busy && !!getToken() && data && ageMin(now) > 30 && now - last > 10 * 60e3;
+}
+
 const rel = (iso, now = Date.now()) => {
   const m = Math.round((now - ms(iso)) / 60000);
   if (m < 1) return 'ahora';
@@ -59,6 +123,7 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
     return;
   }
   const now = Date.now();
+  const note = notice && now - notice.at < 120000 ? notice : null; // los avisos caducan a los 2 min
   const hours = prefs.hours || 24;
   const items = data.items.filter((i) => now - ms(i.published) <= hours * 3600e3)
     .filter((i) => prefs.only === 'all' || i.impact.relevant)
@@ -97,9 +162,15 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
 
   el.innerHTML = `
   <div class="card" style="margin-bottom:12px"><div class="row" style="justify-content:space-between">
-    <div><b>Actualizado ${rel(data.generatedAt, now)}</b> <span class="note">(${toLocal(data.generatedAt, off).replace('T', ' ').slice(0, 16)} ${esc(tzLabel())}) · ${okSrc}/${data.sources.length} fuentes activas</span>
-    ${stale > 45 ? '<div class="warn-box">Los datos tienen más de 45 min: el workflow de actualización puede estar retrasado o detenido.</div>' : ''}</div>
-    <button class="btn ghost sm" id="newsRefresh">Actualizar ahora</button></div></div>
+    <div><b>Actualizado ${rel(data.generatedAt, now)}</b> <span class="note">(${toLocal(data.generatedAt, off).replace('T', ' ').slice(0, 16)} ${esc(tzLabel())}) · ${okSrc}/${data.sources.length} fuentes activas</span></div>
+    <button class="btn ghost sm" id="newsRefresh" ${busy ? 'disabled' : ''}>${busy ? 'Actualizando…' : 'Actualizar ahora'}</button></div>
+    ${stale > 45 ? `<div class="warn-box">Las noticias publicadas tienen ${stale >= 120 ? Math.floor(stale / 60) + ' h' : Math.round(stale) + ' min'}: la actualización automática de GitHub se está retrasando. ${getToken() ? 'Pulsa "Actualizar ahora" para pedirla al instante.' : 'Configura el token de abajo para poder pedirla al instante con el botón.'}</div>` : ''}
+    <div id="newsStatus" class="note" role="status" aria-live="polite">${note ? `<span class="${note.kind === 'error' ? 'neg' : note.kind === 'ok' ? 'pos' : ''}">${esc(note.text)}</span>` : ''}</div>
+    <details id="ghCfg" ${note && note.openCfg ? 'open' : ''} style="margin-top:6px"><summary class="note">Actualización a demanda ${getToken() ? '(token guardado ✓)' : '(requiere un token)'}</summary>
+      <p class="note">GitHub ejecuta la actualización automática de forma irregular. Con un token propio, el botón la pide al instante. Pasos: (1) abre <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → Fine-grained tokens → Generate new token</a>; (2) <i>Repository access</i>: solo <b>${esc(repoSlug())}</b>; (3) <i>Permissions → Repository permissions → Actions: Read and write</i> (nada más); (4) copia el token y pégalo aquí. Se guarda solo en este navegador y no entra en los respaldos.</p>
+      <div class="row"><input type="password" id="ghToken" placeholder="github_pat_…" style="width:260px" autocomplete="off" value="">
+        <button class="btn sm" id="ghSave">Guardar token</button>${getToken() ? '<button class="btn ghost sm" id="ghDel">Quitar token</button>' : ''}</div></details>
+  </div>
   <div class="grid cols2">
     <div class="card ins ${tone}"><h3>Sesgo reciente para el oro (últimas 12 h)</h3>
       <h4 style="font-size:20px;text-transform:capitalize">${esc(sum.label)}</h4>
@@ -119,7 +190,21 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
   <p class="note">Los titulares enlazan a la fuente original (en inglés). Fuentes: ${data.sources.map((s) => `<span title="${esc(s.error || s.count + ' titulares')}">${s.ok ? '✅' : '⚠️'} ${esc(s.name)}</span>`).join(' · ')}</p>`;
 
   const again = () => renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen });
-  el.querySelector('#newsRefresh').onclick = async (ev) => { ev.target.disabled = true; await loadNews(); again(); };
+  const status = (text, kind = 'info') => { const n = document.getElementById('newsStatus'); if (n) n.innerHTML = `<span class="${kind === 'error' ? 'neg' : ''}">${esc(text)}</span>`; };
+  const run = async () => {
+    const btn = el.querySelector('#newsRefresh'); if (btn) { btn.disabled = true; btn.textContent = 'Actualizando…'; }
+    const r = await refreshNow(status);
+    if (r.busy) return;
+    if (r.changed) notice = { at: Date.now(), kind: 'ok', text: `Noticias actualizadas ✓ (${toLocal(data.generatedAt, tzOff()).slice(11, 16)})` };
+    else if (r.needsToken) notice = { at: Date.now(), kind: 'info', openCfg: true, text: `No hay datos más nuevos publicados (los últimos son de hace ${ageMin()} min). GitHub no ha ejecutado la actualización automática; para pedirla al instante, configura el token de abajo.` };
+    else if (r.error) notice = { at: Date.now(), kind: 'error', openCfg: true, text: r.error };
+    else if (r.timeout) notice = { at: Date.now(), kind: 'info', text: 'GitHub sigue trabajando en la actualización; vuelve a pulsar el botón en un minuto.' };
+    again();
+  };
+  el.querySelector('#newsRefresh').onclick = run;
+  el.querySelector('#ghSave').onclick = () => { const v = el.querySelector('#ghToken').value.trim(); if (!v) return; setToken(v); notice = { at: Date.now(), kind: 'ok', text: 'Token guardado. Pulsa "Actualizar ahora".' }; again(); };
+  const del = el.querySelector('#ghDel'); if (del) del.onclick = () => { setToken(''); notice = null; again(); };
+  if (shouldAutoRefresh()) run();
   const bind = (id, fn, evn = 'change') => el.querySelector(id).addEventListener(evn, (e) => { fn(e.target); save(); again(); });
   bind('#fHours', (t) => { prefs.hours = +t.value; });
   bind('#fBias', (t) => { prefs.bias = t.value; });

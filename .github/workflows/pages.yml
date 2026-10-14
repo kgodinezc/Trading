@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '*/10 * * * *'   # actualiza las noticias y vuelve a publicar
+    - cron: '4-59/10 * * * *'   # actualiza las noticias y vuelve a publicar (fuera del minuto :00/:30, donde GitHub más retrasa)
   workflow_dispatch:
 
 permissions:

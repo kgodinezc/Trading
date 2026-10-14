@@ -2,7 +2,7 @@ import { parseExnessReport, toMs } from './core/parser.js';
 import { computeStats, equityCurve, summarize, groupBy, day } from './core/stats.js';
 import { buildInsights, fmtDuration, WEEKDAYS } from './core/insights.js';
 import { positionSize, inferValuePerLot, targets } from './core/risk.js';
-import { groupEntries, toLocal, stopAlert, dayAlerts, missingJournal, DEFAULTS } from './core/entries.js';
+import { groupEntries, toLocal, entriesByDay, DEFAULTS } from './core/entries.js';
 import { loadNews, renderNews, upcomingAlert, newestPublished } from './news-view.js';
 import * as store from './core/store.js';
 
@@ -56,20 +56,6 @@ const entriesOf = (ts) => groupEntries(ts, entryCfg());
 const localHM = (iso) => iso.slice(11, 16);
 const entryKey = (id) => store.noteKey(state.settings.active, id);
 
-// Alerta global: en el último día operado (o el anterior) hubo dos entradas negativas seguidas y la bitácora está incompleta.
-function pendingStop() {
-  const days = dayAlerts(entriesOf(allTrades()));
-  const keys = [...days.keys()].sort();
-  const last = keys[keys.length - 1];
-  if (!last) return null;
-  const minDay = new Date(Date.parse(`${last}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
-  for (const d of keys.filter((k) => k >= minDay).reverse()) {
-    const info = days.get(d);
-    const missing = missingJournal(state.journal[d]);
-    if (info.alert.active && missing.length) return { day: d, alert: info.alert, missing };
-  }
-  return null;
-}
 function renderNewsBar() {
   const bar = $('#newsBar'), a = upcomingAlert(tzOff());
   if (!a) { bar.hidden = true; return; }
@@ -77,14 +63,6 @@ function renderNewsBar() {
   bar.innerHTML = `⚠️ <b>Noticia de alto impacto:</b> ${esc(a.title)} (USD) ${a.past ? `salió hace ${-a.min} min` : `a las ${a.when} — en ${a.min} min`}. Evita abrir entradas cerca de la publicación: el spread y el deslizamiento se disparan. <button class="btn sm" id="newsGo">Ver noticias</button>`;
   $('#newsGo').onclick = () => { tab = 'noticias'; render(); };
 }
-function renderAlertBar() {
-  const bar = $('#alertBar'), p = pendingStop();
-  if (!p) { bar.hidden = true; return; }
-  bar.hidden = false;
-  bar.innerHTML = `🛑 <b>ALTO:</b> las entradas ${p.alert.entries[0]} y ${p.alert.entries[1]} del ${fmtDay(p.day)} cerraron en negativo (${money(p.alert.loss, { sign: true })}). Detente y completa la bitácora del día — falta: ${p.missing.join(', ')}. <button class="btn sm" id="alertGo">Completar bitácora</button>`;
-  $('#alertGo').onclick = () => { tab = 'bitacora'; view.selDay = p.day; view.calMonth = p.day.slice(0, 7); render(); };
-}
-
 // ---------- filtros ----------
 function dateBounds() {
   const ts = allTrades();
@@ -184,8 +162,7 @@ function renderStats(el, ts, st) {
   const hours = st.byHour;
   const ents = entriesOf(ts);
   const entSum = summarize(ents.map((e) => ({ net: e.net, durationSec: 0, volume: e.volume, commission: 0, swap: 0 })));
-  const dayList = [...dayAlerts(ents).values()];
-  const stopDays = dayList.filter((d) => d.alert.active).length;
+  const dayCount = entriesByDay(ents).size;
   el.innerHTML = `
   <div class="grid cols2">
     <div class="card"><h3>Detalle general</h3><table><tbody>
@@ -203,13 +180,13 @@ function renderStats(el, ts, st) {
     </tbody></table><p class="note">Una operación con resultado exactamente 0 no cuenta como ganada (MT5 sí la cuenta en su % de ganadas).</p></div>
     <div class="card"><h3>Por mes</h3><div class="chart"><canvas id="c-month"></canvas></div></div>
     <div class="card"><h3>Entradas (ventanas de ${entryCfg().windowMin} min)</h3><table><tbody>
-      <tr><td>Entradas</td><td>${entSum.n} en ${dayList.length} días</td></tr>
+      <tr><td>Entradas</td><td>${entSum.n} en ${dayCount} días</td></tr>
       <tr><td>Operaciones por entrada (media)</td><td>${(ts.length / Math.max(1, entSum.n)).toFixed(1)}</td></tr>
       <tr><td>Entradas ganadoras</td><td>${entSum.wins} (${pct(entSum.winRate, 0)})</td></tr>
       <tr><td>Resultado medio por entrada</td><td class="${cls(entSum.expectancy)}">${money(entSum.expectancy, { sign: true })}</td></tr>
       <tr><td>Ganancia / pérdida media</td><td>${money(entSum.avgWin)} / ${money(entSum.avgLoss)}</td></tr>
       <tr><td>Factor de beneficio</td><td>${Number.isFinite(entSum.profitFactor) ? num2(entSum.profitFactor) : '∞'}</td></tr>
-      <tr><td>Días con alerta de ALTO (2 negativas seguidas)</td><td class="${stopDays ? 'neg' : ''}">${stopDays}</td></tr>
+
     </tbody></table></div>
     ${groupTable(`Por hora de entrada (hora de Costa Rica)`, hours, (k) => `${String(k).padStart(2, '0')}:00`, { id: 'c-hour' })}
     ${groupTable('Por día de la semana', st.byWeekday, (k) => WEEKDAYS[k], { id: 'c-wd' })}
@@ -229,7 +206,7 @@ function renderStats(el, ts, st) {
 
 function renderInsights(el, ts, st) {
   if (!ts.length) { el.innerHTML = noData(); return; }
-  const list = buildInsights(ts, st, { fmt: money, startBalance: st.equity.deposits, entries: entriesOf(ts) });
+  const list = buildInsights(ts, st, { fmt: money, startBalance: st.equity.deposits });
   const names = { alta: 'Prioridad alta', media: 'A mejorar', info: 'Observación', ok: 'Lo que haces bien' };
   el.innerHTML = `<p class="note">Análisis automático de ${ts.length} operaciones. Son patrones estadísticos, no garantías: con pocas operaciones pueden ser casualidad.</p>` +
     ['alta', 'media', 'info', 'ok'].map((lv) => {
@@ -257,7 +234,7 @@ function renderOps(el, ts) {
 function renderBitacora(el) {
   const ts = allTrades();
   const byDay = new Map(groupBy(ts, (t) => day(t.closeTime)).map((g) => [g.key, g]));
-  const alerts = dayAlerts(entriesOf(ts));
+  const entsByDay = entriesByDay(entriesOf(ts));
   const last = ts.length ? day(ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), '')) : new Date().toISOString().slice(0, 10);
   if (!view.calMonth) view.calMonth = last.slice(0, 7);
   if (!view.selDay) view.selDay = last;
@@ -271,8 +248,7 @@ function renderBitacora(el) {
     const key = `${view.calMonth}-${String(d).padStart(2, '0')}`;
     const g = byDay.get(key), j = state.journal[key];
     if (g) monthNet += g.net;
-    const ad = alerts.get(key);
-    cells += `<button class="d ${g ? (g.net >= 0 ? 'win' : 'loss') : ''} ${j ? 'has-note' : ''} ${key === view.selDay ? 'sel' : ''}" data-day="${key}">${d}${ad?.alert.active ? ' 🛑' : ''}${g ? `<b class="${cls(g.net)}">${money(g.net, { sign: true })}</b><span>${ad ? ad.entries.length : 0} entr. · ${g.n} op.</span>` : ''}</button>`;
+    cells += `<button class="d ${g ? (g.net >= 0 ? 'win' : 'loss') : ''} ${j ? 'has-note' : ''} ${key === view.selDay ? 'sel' : ''}" data-day="${key}">${d}${g ? `<b class="${cls(g.net)}">${money(g.net, { sign: true })}</b><span>${(entsByDay.get(key) || []).length} entr. · ${g.n} op.</span>` : ''}</button>`;
   }
   const monthName = first.toLocaleDateString('es-CR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   el.innerHTML = `<div class="card" style="margin-bottom:12px"><div class="row">
@@ -301,11 +277,9 @@ function shiftMonth(delta) {
 function renderDayPanel(byDay) {
   const key = view.selDay, g = byDay.get(key), j = state.journal[key] || {};
   const dayEntries = entriesOf(allTrades()).filter((e) => e.day === key);
-  const stop = stopAlert(dayEntries), missing = missingJournal(j);
   const radio = (name, opts, val) => opts.map(([v, l]) => `<label><input type="radio" name="${name}" value="${v}" ${val === v ? 'checked' : ''}><span>${l}</span></label>`).join('');
   $('#dayPanel').innerHTML = `<div class="card">
     <h3>${fmtDay(key)}</h3>
-    ${stop.active ? `<div class="stop-box" id="stopBox">${stopText(stop, missing)}</div>` : ''}
     ${g ? `<p><b class="${cls(g.net)}">${money(g.net, { sign: true })}</b> · ${dayEntries.length} entradas · ${g.n} operaciones · win rate ${pct(g.winRate, 0)} · PF ${Number.isFinite(g.profitFactor) ? num2(g.profitFactor) : '∞'}</p>` : '<p class="note">Sin operaciones este día (puedes anotar tu plan o descanso igualmente).</p>'}
     <form class="form" id="jForm" autocomplete="off">
       <label>Plan previo (qué buscaré, zonas, límite de pérdida, número de operaciones)<textarea name="plan">${esc(j.plan)}</textarea></label>
@@ -327,8 +301,6 @@ function renderDayPanel(byDay) {
       const entry = Object.fromEntries(Object.entries(fd).filter(([, v]) => String(v).trim() !== ''));
       if (Object.keys(entry).length) state.journal[key] = { ...entry, updated: new Date().toISOString() }; else delete state.journal[key];
       persist(); $('#saved').textContent = 'Guardado ✓';
-      renderAlertBar();
-      if ($('#stopBox')) $('#stopBox').innerHTML = stopText(stop, missingJournal(state.journal[key]));
       const btn = document.querySelector(`[data-day="${key}"]`); if (btn) btn.classList.toggle('has-note', !!state.journal[key]);
     }, 400);
   });
@@ -409,10 +381,6 @@ function renderCalc(el) {
   calc();
 }
 
-
-function stopText(stop, missing) {
-  return `🛑 <b>ALTO.</b> Las entradas ${stop.entries[0]} y ${stop.entries[1]} cerraron en negativo (${money(stop.loss, { sign: true })}). Deja de operar por hoy y completa la bitácora${missing.length ? `: falta ${missing.join(', ')}` : ' (ya está completa ✓)'}.`;
-}
 
 function entryCard(e) {
   const n = state.entryNotes[entryKey(e.id)];
@@ -552,7 +520,6 @@ function render() {
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#filters').hidden = ['bitacora', 'datos', 'calc', 'noticias'].includes(tab) || !allTrades().length;
   $('#filters').classList.toggle('is-custom', view.period === 'custom');
-  renderAlertBar();
   renderNewsBar();
   const el = $(`#view-${tab}`);
   if (tab === 'datos') return renderDatos(el);

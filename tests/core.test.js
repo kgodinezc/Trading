@@ -170,7 +170,7 @@ test('targets calcula TP por ratio y win rate mínimo', () => {
   assert.equal(targets(100, 105, [1])[0].tp, 95);
 });
 
-import { groupEntries, stopAlert, localDay, toLocal, missingJournal, dayAlerts } from '../app/js/core/entries.js';
+import { groupEntries, entriesByDay, localDay, toLocal } from '../app/js/core/entries.js';
 
 const T = (id, close, net) => ({ id, closeTime: close, openTime: close, net, volume: 0.1, side: 'buy', durationSec: 0 });
 
@@ -194,30 +194,6 @@ test('groupEntries: el día se calcula en hora local y no cruza medianoche local
   assert.deepEqual(es.map((e) => e.day), ['2026-09-17', '2026-09-18']);
 });
 
-test('stopAlert: dos entradas consecutivas negativas', () => {
-  const mk = (nets) => nets.map((net, i) => ({ index: i + 1, net }));
-  assert.equal(stopAlert(mk([5, -1, 4, -2])).active, false);
-  const a = stopAlert(mk([5, -1, -2, 3]));
-  assert.equal(a.active, true);
-  assert.deepEqual(a.entries, [2, 3]);
-  assert.equal(a.loss, -3);
-  assert.equal(stopAlert(mk([-1])).active, false);
-});
-
-test('missingJournal y dayAlerts', () => {
-  assert.deepEqual(missingJournal({ followed: 'si', improve: 'x' }), []);
-  assert.equal(missingJournal({}).length, 2);
-  const es = groupEntries([T(1, '2026-09-18T14:00:00', -1), T(2, '2026-09-18T15:00:00', -2)], { tzOffset: 0 });
-  assert.equal(dayAlerts(es).get('2026-09-18').alert.active, true);
-});
-
-test('buildInsights avisa si sigues operando tras el ALTO', () => {
-  const trades = [T(1, '2026-09-18T14:00:00', -10), T(2, '2026-09-18T15:00:00', -10), T(3, '2026-09-18T16:00:00', -20)];
-  const entries = groupEntries(trades, { tzOffset: 0 });
-  const ins = buildInsights(trades, computeStats(trades, []), { entries });
-  assert.ok(ins.some((i) => i.id === 'alto' && i.level === 'alta'));
-});
-
 test('migrateJournal conserva estado emocional y lección dentro de "Qué debo mejorar"', async () => {
   const { migrateJournal } = await import('../app/js/core/store.js');
   const st = emptyState();
@@ -232,4 +208,11 @@ test('migrateJournal conserva estado emocional y lección dentro de "Qué debo m
   assert.equal(st.journal['2026-09-03'].improve, 'Intacto');
   migrateJournal(st); // idempotente
   assert.equal(st.journal['2026-09-02'].improve, 'Lección: Solo lección');
+});
+
+test('entriesByDay agrupa las entradas por día', () => {
+  const es = groupEntries([T(1, '2026-09-18T14:00:00', -1), T(2, '2026-09-18T15:00:00', -2), T(3, '2026-09-19T14:00:00', 5)], { tzOffset: 0 });
+  const m = entriesByDay(es);
+  assert.equal(m.size, 2);
+  assert.equal(m.get('2026-09-18').length, 2);
 });

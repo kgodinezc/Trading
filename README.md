@@ -21,7 +21,6 @@ Publicación: Settings → Pages → Source: *GitHub Actions* (el workflow publi
   exceso de posiciones simultáneas, sobreoperación, mejores/peores horas, drawdown y riesgo por operación.
 - **Calculadora de lote**: lote según % de riesgo, precio de entrada y Stop Loss (valor por lote deducido de tus operaciones), con TP por ratio R:B y win rate mínimo.
 - **Entradas**: las operaciones cerradas dentro de una ventana de 30 min (ajustable) se agrupan como **una entrada**, tal como en tu hoja de Excel; cada entrada se documenta con etiquetas y notas. 
-- **Alerta de ALTO**: si dos entradas consecutivas del día cierran en negativo, aparece un aviso para que dejes de operar y completes la bitácora (si seguiste el plan y qué debes mejorar).
 - **Noticias**: titulares del día y agenda económica (hora de Costa Rica) con una lectura automática de su impacto en el oro (▲ alcista / ▼ bajista / ◆ mixto), el porqué de cada lectura, un resumen del sesgo de las últimas 12 h, y un aviso en toda la app cuando se acerca una noticia USD de alto impacto. Se refresca sola cada 5 min.
 - **Bitácora**: calendario con P/L, plan previo, ¿seguí mi plan?, qué hice bien, qué debo mejorar, notas y etiquetas por operación,
   y cruce de disciplina vs. resultado. Respaldo/restauración en JSON.
@@ -35,7 +34,12 @@ Los navegadores no pueden leer los medios directamente (CORS), así que el workf
 calendario económico de ForexFactory, en UTC), genera `app/data/news.json` y vuelve a publicar la página. La app lee ese archivo
 y clasifica el impacto con reglas de palabras clave (`app/js/core/newsimpact.js`). Solo se guardan titulares y enlaces a la fuente.
 
-- GitHub puede retrasar los workflows programados (10–30 min en horas de mucha carga) y los **desactiva tras 60 días sin actividad**
-  en el repositorio: si lo notas detenido, ejecútalo a mano en Actions → *Publicar app web* → *Run workflow*.
+- GitHub ejecuta los workflows programados de forma **irregular**: en este repositorio el cron de 10 min llegó a correr solo cada
+  3–8 h. Por eso el botón **Actualizar ahora** puede pedir la actualización al instante (API de GitHub, ≈1 min): hace falta un
+  token fine-grained **solo de este repositorio con permiso "Actions: Read and write"**, que se pega una vez en la pestaña
+  Noticias → *Actualización a demanda*. El token se guarda solo en el navegador (no entra en los respaldos). Con token guardado,
+  abrir la pestaña con datos de más de 30 min pide la actualización sola (máx. una vez cada 10 min).
+- GitHub también **desactiva** los workflows programados tras 60 días sin actividad en el repositorio.
+- Manual: Actions → *Publicar app web* → *Run workflow*.
 - Si una fuente falla, las demás siguen funcionando; la pestaña muestra cuáles están activas.
 - En local: `npm run news` genera `app/data/news.json` (ignorado por git) y `npm start` lo sirve.

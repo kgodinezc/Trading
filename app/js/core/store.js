@@ -6,20 +6,31 @@ const KEY = 'trading-journal.v1';
 export const emptyState = () => ({
   version: 1,
   accounts: {},        // número de cuenta -> { account, trades: {id: trade}, balanceOps: {id: op}, reported }
-  journal: {},         // 'YYYY-MM-DD' -> entrada de bitácora
+  journals: {},        // cuenta -> { 'YYYY-MM-DD' -> entrada de bitácora }
   tradeNotes: {},      // 'cuenta:id' -> { tags: [], note }
   entryNotes: {},      // 'cuenta:id de la primera operación cerrada de la entrada' -> { tags: [], note }
   settings: { unit: 'usd', active: null },
 });
 
-// El estado emocional y la lección se quitaron de la bitácora: lo ya escrito se conserva dentro de "Qué debo mejorar".
+// Migraciones de datos guardados:
+// 1) la bitácora era un solo diario global; ahora hay uno por cuenta (la antigua pasa a la cuenta activa/primera);
+// 2) el estado emocional y la lección se quitaron: lo ya escrito se conserva dentro de "Qué debo mejorar".
+const mergeLegacyFields = (j) => {
+  if (!j || (!j.mood && !j.lesson)) { if (j) { delete j.mood; delete j.lesson; } return; }
+  const extra = [j.lesson && `Lección: ${j.lesson}`, j.mood && `Ánimo: ${j.mood}`].filter(Boolean).join('\n');
+  j.improve = [j.improve, extra].filter((x) => x && String(x).trim()).join('\n');
+  delete j.mood; delete j.lesson;
+};
+
 export function migrateJournal(state) {
-  for (const j of Object.values(state.journal || {})) {
-    if (!j || (!j.mood && !j.lesson)) { if (j) { delete j.mood; delete j.lesson; } continue; }
-    const extra = [j.lesson && `Lección: ${j.lesson}`, j.mood && `Ánimo: ${j.mood}`].filter(Boolean).join('\n');
-    j.improve = [j.improve, extra].filter((x) => x && String(x).trim()).join('\n');
-    delete j.mood; delete j.lesson;
+  state.journals = state.journals || {};
+  const legacy = state.journal;
+  if (legacy && typeof legacy === 'object') {
+    const target = (state.accounts && state.accounts[state.settings?.active] ? state.settings.active : null) || Object.keys(state.accounts || {})[0] || null;
+    if (!Object.keys(legacy).length) delete state.journal;
+    else if (target) { state.journals[target] = { ...legacy, ...(state.journals[target] || {}) }; delete state.journal; }
   }
+  for (const days of [...Object.values(state.journals), ...(state.journal ? [state.journal] : [])]) for (const j of Object.values(days)) mergeLegacyFields(j);
   return state;
 }
 
@@ -49,6 +60,7 @@ export function mergeReport(state, report) {
   acc.account = report.account;
   acc.reported = report.reported;
   if (!state.settings.active || !state.accounts[state.settings.active]) state.settings.active = num;
+  migrateJournal(state);
   return { account: num, added, updated, total: Object.keys(acc.trades).length };
 }
 

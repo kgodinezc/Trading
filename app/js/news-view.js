@@ -1,7 +1,7 @@
-// Pestaña "Noticias": titulares y agenda económica con su lectura de impacto en el oro.
+// Pestaña "Noticias": titulares y agenda económica con su lectura de impacto en oro, petróleo, S&P 500, Nasdaq 100 y Bitcoin.
 // Los datos (data/news.json) los genera un workflow de GitHub Actions cada pocos minutos.
 import { toLocal } from './core/entries.js';
-import { classify, classifyEvent, summarizeBias } from './core/newsimpact.js';
+import { classify, classifyEvent, summarizeBias, ASSETS, assetName } from './core/newsimpact.js';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const safeHref = (u) => (/^https?:\/\//i.test(u || '') ? esc(u) : '');
@@ -15,7 +15,7 @@ export async function loadNews() {
     const r = await fetch(`data/news.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) throw new Error(r.status === 404 ? 'Aún no se ha generado data/news.json' : `HTTP ${r.status}`);
     const d = await r.json();
-    for (const i of d.items) i.impact = classify(i);
+    for (const i of d.items) i.impacts = classify(i);
     for (const e of d.calendar) e.read = classifyEvent(e);
     data = d; error = null;
   } catch (e) { error = e.message; }
@@ -98,8 +98,8 @@ const hm = (iso, off) => toLocal(iso, off).slice(11, 16);
 const dayOf = (iso, off) => toLocal(iso, off).slice(0, 10);
 
 const BIAS = {
-  alcista: ['▲ Alcista para el oro', 'ok'], bajista: ['▼ Bajista para el oro', 'alta'],
-  mixto: ['◆ Señales mixtas', 'media'], neutral: ['• Sin impacto claro', 'info'],
+  alcista: ['▲ Alcista para', 'ok'], bajista: ['▼ Bajista para', 'alta'],
+  mixto: ['◆ Señales mixtas para', 'media'], neutral: ['• Sin impacto claro en', 'info'],
 };
 const IMPACT = { high: ['Alto', 'alta'], medium: ['Medio', 'media'], low: ['Bajo', 'info'] };
 
@@ -125,11 +125,14 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
   const now = Date.now();
   const note = notice && now - notice.at < 120000 ? notice : null; // los avisos caducan a los 2 min
   const hours = prefs.hours || 24;
+  const asset = ASSETS.some((a) => a.id === prefs.asset) ? prefs.asset : 'gold';
+  const aname = assetName(asset);
   const items = data.items.filter((i) => now - ms(i.published) <= hours * 3600e3)
-    .filter((i) => prefs.only === 'all' || i.impact.relevant)
-    .filter((i) => prefs.bias === 'all' || i.impact.bias === prefs.bias)
+    .filter((i) => prefs.only === 'all' || i.impacts[asset].relevant)
+    .filter((i) => prefs.bias === 'all' || i.impacts[asset].bias === prefs.bias)
     .filter((i) => !prefs.q || `${i.title} ${i.source}`.toLowerCase().includes(prefs.q.toLowerCase()));
-  const sum = summarizeBias(data.items.filter((i) => i.impact.relevant), now, { hours: 12 });
+  const sum = summarizeBias(data.items, now, { hours: 12, asset });
+  const overview = ASSETS.map((a) => ({ a, s: summarizeBias(data.items, now, { hours: 12, asset: a.id }) }));
   const tone = sum.label.includes('alcista') ? 'ok' : sum.label.includes('bajista') ? 'alta' : 'info';
   const stale = (now - ms(data.generatedAt)) / 60000;
   const okSrc = data.sources.filter((s) => s.ok).length;
@@ -138,26 +141,30 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
     .filter((e) => e.time ? dayOf(e.time, off) === dayOf(new Date(now).toISOString().slice(0, 19), off) : e.date === dayOf(new Date(now).toISOString().slice(0, 19), off))
     .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
-  const topicRows = sum.topics.slice(0, 5).map((t) => `<span class="pill" title="${t.bull} a favor · ${t.bear} en contra">${esc(t.topic)} ${t.net > 0 ? '▲' : '▼'}</span>`).join(' ');
+  const topicRows = sum.topics.slice(0, 5).map((t) => `<li><b>${t.net > 0 ? '▲' : '▼'} ${esc(t.topic)}</b> <span class="note">(${t.bull} a favor · ${t.bear} en contra)</span>${t.example ? `<div class="note">«${esc(t.example.length > 110 ? t.example.slice(0, 107) + '…' : t.example)}»</div>` : ''}</li>`).join('');
   const calHtml = cal.length ? `<div class="scroll" style="max-height:340px"><table><thead><tr><th>Hora</th><th>Mon.</th><th>Evento</th><th>Impacto</th><th>Prev.</th><th>Pron.</th><th>Real</th></tr></thead><tbody>${cal.map((e) => {
     const [lab, lv] = IMPACT[e.impact] || IMPACT.low; const past = e.time && ms(e.time) < now;
-    const sur = e.read.surprise ? ` <span class="badge ${e.read.surprise.bias === 'alcista' ? 'ok' : 'alta'}">${e.read.surprise.bias} para el oro</span>` : '';
-    return `<tr style="${past ? 'opacity:.6' : ''}"><td>${e.time ? hm(e.time, off) : 'Pend.'}</td><td>${esc(e.country)}</td><td style="text-align:left;white-space:normal">${esc(e.title)}${sur}${e.read.how ? `<details><summary class="note">Cómo leerlo para el oro</summary><div class="note">${esc(e.read.how)}</div></details>` : ''}</td><td><span class="badge ${lv}">${lab}</span></td><td>${esc(e.previous ?? '–')}</td><td>${esc(e.forecast ?? '–')}</td><td>${esc(e.actual ?? '–')}</td></tr>`;
+    const sp = e.read.surprise[asset]; const sur = sp ? ` <span class="badge ${sp.bias === 'alcista' ? 'ok' : 'alta'}">${sp.bias} para ${esc(aname)}</span>` : '';
+    return `<tr style="${past ? 'opacity:.6' : ''}"><td>${e.time ? hm(e.time, off) : 'Pend.'}</td><td>${esc(e.country)}</td><td style="text-align:left;white-space:normal">${esc(e.title)}${sur}${e.read.how[asset] ? `<details><summary class="note">Cómo leerlo para ${esc(aname)}</summary><div class="note">${esc(e.read.how[asset])}</div></details>` : ''}</td><td><span class="badge ${lv}">${lab}</span></td><td>${esc(e.previous ?? '–')}</td><td>${esc(e.forecast ?? '–')}</td><td>${esc(e.actual ?? '–')}</td></tr>`;
   }).join('')}</tbody></table></div>` : '<p class="note">No hay eventos con estos filtros para hoy.</p>';
 
   let lastDay = '';
   const list = items.map((i) => {
     const d = dayOf(i.published, off); let head = '';
     if (d !== lastDay) { lastDay = d; head = `<h3 style="margin:14px 0 6px">${d === dayOf(new Date(now).toISOString().slice(0, 19), off) ? 'Hoy' : esc(d)}</h3>`; }
-    const [lab, lv] = BIAS[i.impact.bias]; const isNew = lastSeen && i.published > lastSeen;
-    const dots = i.impact.bias === 'neutral' ? '' : '●'.repeat(i.impact.strength) + '○'.repeat(3 - i.impact.strength);
+    const imp = i.impacts[asset];
+    const [lab, lv] = BIAS[imp.bias]; const isNew = lastSeen && i.published > lastSeen;
+    const dots = imp.bias === 'neutral' ? '' : '●'.repeat(imp.strength) + '○'.repeat(3 - imp.strength);
+    const others = ASSETS.filter((a) => a.id !== asset && i.impacts[a.id].relevant && i.impacts[a.id].bias !== 'neutral')
+      .map((a) => `<span class="pill" title="Lectura para ${esc(a.name)}">${esc(a.name)} ${{ alcista: '▲', bajista: '▼', mixto: '◆' }[i.impacts[a.id].bias]}</span>`).join('');
     const href = safeHref(i.link);
     return `${head}<div class="card ins ${lv}" style="margin-bottom:8px">
       <div class="row" style="justify-content:space-between"><span class="note">${hm(i.published, off)} · ${rel(i.published, now)} · ${esc(i.source)}${i.alsoIn.length ? ` +${i.alsoIn.length}` : ''}</span>
-      <span><span class="badge ${lv}">${lab}</span> <span class="note" title="Fuerza de la señal">${dots}</span>${isNew ? ' <span class="badge info">Nueva</span>' : ''}</span></div>
+      <span><span class="badge ${lv}">${lab} ${esc(aname)}</span> <span class="note" title="Fuerza de la señal">${dots}</span>${isNew ? ' <span class="badge info">Nueva</span>' : ''}</span></div>
       <h4>${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${esc(i.title)}</a>` : esc(i.title)}</h4>
-      ${i.impact.reasons.map((r) => `<p class="tip" style="color:var(--muted)">${esc(r.why)}</p>`).join('')}
-      ${i.impact.topics.length ? `<div>${i.impact.topics.map((t) => `<span class="pill">${esc(t)}</span>`).join('')}</div>` : ''}</div>`;
+      ${imp.reasons.map((r) => `<p class="tip" style="color:var(--muted)">${esc(r.why)}</p>`).join('')}
+      ${imp.topics.length ? `<div>${imp.topics.map((t) => `<span class="pill">${esc(t)}</span>`).join('')}</div>` : ''}
+      ${others ? `<div class="note">También afecta a: ${others}</div>` : ''}</div>`;
   }).join('');
 
   el.innerHTML = `
@@ -171,11 +178,15 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
       <div class="row"><input type="password" id="ghToken" placeholder="github_pat_…" style="width:260px" autocomplete="off" value="">
         <button class="btn sm" id="ghSave">Guardar token</button>${getToken() ? '<button class="btn ghost sm" id="ghDel">Quitar token</button>' : ''}</div></details>
   </div>
+  <div class="assets" role="tablist" aria-label="Activo">${overview.map(({ a, s: o }) => {
+    const t = o.label.includes('alcista') ? 'ok' : o.label.includes('bajista') ? 'alta' : 'info';
+    return `<button class="asset ${a.id === asset ? 'on' : ''}" data-asset="${a.id}" role="tab" aria-selected="${a.id === asset}"><b>${esc(a.name)}</b><span class="note">${esc(a.code)}</span><span class="badge ${t}">${esc(o.label.replace('ligeramente ', 'lig. ').replace(' / dividido', ''))}</span><span class="note">▲${o.bull} ▼${o.bear}${o.mixed ? ` ◆${o.mixed}` : ''}</span></button>`;
+  }).join('')}</div>
   <div class="grid cols2">
-    <div class="card ins ${tone}"><h3>Sesgo reciente para el oro (últimas 12 h)</h3>
+    <div class="card ins ${tone}"><h3>Perspectiva de ${esc(aname)} (últimas 12 h)</h3>
       <h4 style="font-size:20px;text-transform:capitalize">${esc(sum.label)}</h4>
       <p>${sum.bull} noticias a favor · ${sum.bear} en contra · ${sum.mixed} mixtas, de ${sum.total} relevantes. Las más recientes pesan más.</p>
-      <div>${topicRows || '<span class="note">Sin temas dominantes.</span>'}</div>
+      <ul class="drivers">${topicRows || '<li class="note">Sin factores dominantes.</li>'}</ul>
       <p class="note">Lectura automática por palabras clave; es una guía de contexto, no una señal de entrada. Confírmala siempre con el gráfico.</p></div>
     <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Agenda de hoy (${esc(tzLabel())})</h3>
       <span class="row"><label class="inline"><input type="checkbox" id="fUsd" ${prefs.usdOnly ? 'checked' : ''}> Solo USD</label><label class="inline"><input type="checkbox" id="fHigh" ${prefs.highOnly ? 'checked' : ''}> Solo impacto alto</label></span></div>
@@ -183,7 +194,7 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
   <div class="card" style="margin:12px 0"><div class="row">
     <label class="inline">Ventana <select id="fHours">${[3, 6, 12, 24, 48].map((h) => `<option value="${h}" ${h === hours ? 'selected' : ''}>${h} h</option>`).join('')}</select></label>
     <label class="inline">Sesgo <select id="fBias">${[['all', 'Todos'], ['alcista', 'Alcistas'], ['bajista', 'Bajistas'], ['mixto', 'Mixtas']].map(([v, l]) => `<option value="${v}" ${prefs.bias === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    <label class="inline"><input type="checkbox" id="fRel" ${prefs.only !== 'all' ? 'checked' : ''}> Solo relevantes para el oro</label>
+    <label class="inline"><input type="checkbox" id="fRel" ${prefs.only !== 'all' ? 'checked' : ''}> Solo relevantes para ${esc(aname)}</label>
     <input type="text" id="fQ" placeholder="Buscar…" value="${esc(prefs.q || '')}" style="width:160px">
     <span class="note">${items.length} titulares</span></div></div>
   ${list || '<div class="empty"><p>No hay titulares con estos filtros.</p></div>'}
@@ -206,6 +217,7 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
   const del = el.querySelector('#ghDel'); if (del) del.onclick = () => { setToken(''); notice = null; again(); };
   if (shouldAutoRefresh()) run();
   const bind = (id, fn, evn = 'change') => el.querySelector(id).addEventListener(evn, (e) => { fn(e.target); save(); again(); });
+  el.querySelectorAll('[data-asset]').forEach((b) => b.addEventListener('click', () => { prefs.asset = b.dataset.asset; save(); again(); }));
   bind('#fHours', (t) => { prefs.hours = +t.value; });
   bind('#fBias', (t) => { prefs.bias = t.value; });
   bind('#fRel', (t) => { prefs.only = t.checked ? 'relevant' : 'all'; });

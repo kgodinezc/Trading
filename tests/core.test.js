@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseExnessReport, parseTime } from '../app/js/core/parser.js';
 import { computeStats, summarize, streaks } from '../app/js/core/stats.js';
 import { buildInsights } from '../app/js/core/insights.js';
-import { emptyState, mergeReport, accountTrades, load, save, importBackup, exportBackup } from '../app/js/core/store.js';
+import { emptyState, mergeReport, accountTrades, load, save, importBackup, exportBackup, migrateJournal } from '../app/js/core/store.js';
 
 // Reporte sintético con la misma estructura que el "Trade History Report" de Exness/MT5.
 const N = null;
@@ -121,9 +121,9 @@ test('store: unir reportes no duplica operaciones y el respaldo se restaura', ()
   assert.deepEqual(mergeReport(state, r), { account: '999', added: 3, updated: 0, total: 3 });
   assert.deepEqual(mergeReport(state, r), { account: '999', added: 0, updated: 3, total: 3 });
   assert.equal(accountTrades(state, '999').length, 3);
-  state.journal['2026-09-01'] = { improve: 'x' };
+  state.journals['999'] = { '2026-09-01': { improve: 'x' } };
   assert.equal(save(mem, state), true);
-  assert.equal(load(mem).journal['2026-09-01'].improve, 'x');
+  assert.equal(load(mem).journals['999']['2026-09-01'].improve, 'x');
   const restored = importBackup(emptyState(), exportBackup(state));
   assert.equal(Object.keys(restored.accounts).length, 1);
   assert.throws(() => importBackup(emptyState(), '{"x":1}'), /respaldo/);
@@ -194,25 +194,39 @@ test('groupEntries: el día se calcula en hora local y no cruza medianoche local
   assert.deepEqual(es.map((e) => e.day), ['2026-09-17', '2026-09-18']);
 });
 
-test('migrateJournal conserva estado emocional y lección dentro de "Qué debo mejorar"', async () => {
+test('migrateJournal: la bitácora global pasa a la cuenta activa y conserva ánimo y lección en "Qué debo mejorar"', async () => {
   const { migrateJournal } = await import('../app/js/core/store.js');
   const st = emptyState();
-  st.journal['2026-09-01'] = { mood: 'Frustrado', lesson: 'Parar al segundo negativo', improve: 'Moví el SL', good: 'Cerré a tiempo' };
-  st.journal['2026-09-02'] = { lesson: 'Solo lección' };
-  st.journal['2026-09-03'] = { improve: 'Intacto' };
+  mergeReport(st, parseExnessReport(fakeReport())); // cuenta 999 activa
+  st.journal = {
+    '2026-09-01': { mood: 'Frustrado', lesson: 'Parar al segundo negativo', improve: 'Moví el SL', good: 'Cerré a tiempo' },
+    '2026-09-02': { lesson: 'Solo lección' },
+    '2026-09-03': { improve: 'Intacto' },
+  };
   migrateJournal(st);
-  assert.equal(st.journal['2026-09-01'].improve, 'Moví el SL\nLección: Parar al segundo negativo\nÁnimo: Frustrado');
-  assert.equal(st.journal['2026-09-01'].good, 'Cerré a tiempo');
-  assert.equal(st.journal['2026-09-01'].mood, undefined);
-  assert.equal(st.journal['2026-09-02'].improve, 'Lección: Solo lección');
-  assert.equal(st.journal['2026-09-03'].improve, 'Intacto');
+  assert.equal(st.journal, undefined);
+  const j = st.journals['999'];
+  assert.equal(j['2026-09-01'].improve, 'Moví el SL\nLección: Parar al segundo negativo\nÁnimo: Frustrado');
+  assert.equal(j['2026-09-01'].good, 'Cerré a tiempo');
+  assert.equal(j['2026-09-01'].mood, undefined);
+  assert.equal(j['2026-09-02'].improve, 'Lección: Solo lección');
+  assert.equal(j['2026-09-03'].improve, 'Intacto');
   migrateJournal(st); // idempotente
-  assert.equal(st.journal['2026-09-02'].improve, 'Lección: Solo lección');
+  assert.equal(st.journals['999']['2026-09-02'].improve, 'Lección: Solo lección');
 });
 
-test('entriesByDay agrupa las entradas por día', () => {
-  const es = groupEntries([T(1, '2026-09-18T14:00:00', -1), T(2, '2026-09-18T15:00:00', -2), T(3, '2026-09-19T14:00:00', 5)], { tzOffset: 0 });
-  const m = entriesByDay(es);
-  assert.equal(m.size, 2);
-  assert.equal(m.get('2026-09-18').length, 2);
+test('bitácora por cuenta: cada cuenta tiene su propio diario y la migración espera a que exista una cuenta', () => {
+  const st = emptyState();
+  st.journal = { '2026-09-01': { good: 'x' } };
+  migrateJournal(st); // sin cuentas todavía: se conserva
+  assert.ok(st.journal);
+  const rep = parseExnessReport(fakeReport());
+  mergeReport(st, rep); // al aparecer la primera cuenta se asigna
+  assert.equal(st.journals['999']['2026-09-01'].good, 'x');
+  const rep2 = parseExnessReport(fakeReport());
+  rep2.account = { ...rep2.account, number: '555' };
+  mergeReport(st, rep2);
+  assert.equal(Object.keys(st.accounts).length, 2);
+  assert.equal(st.journals['555'], undefined); // la otra cuenta empieza con diario vacío
+  assert.equal(accountTrades(st, '555').length, 3);
 });

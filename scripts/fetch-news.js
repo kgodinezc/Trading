@@ -2,7 +2,7 @@
 // Se ejecuta en GitHub Actions cada pocos minutos (los navegadores no pueden leer estos sitios por CORS).
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { classify } from '../app/js/core/newsimpact.js';
+import { classify, ASSETS } from '../app/js/core/newsimpact.js';
 import { parseFeed, parseCalendar, splitTitleSource, normTitle, isoUtc } from '../app/js/core/feed.js';
 
 const UA = 'Mozilla/5.0 (compatible; TradingJournalBot/1.0; +https://github.com/kgodinezc/Trading)';
@@ -13,17 +13,24 @@ export const SOURCES = [
   { id: 'gn-fed', name: 'Google News · Fed y dólar', url: gn('"Federal Reserve" OR FOMC OR "Treasury yields" OR "US dollar" when:2d') },
   { id: 'gn-data', name: 'Google News · Datos EE. UU.', url: gn('nonfarm payrolls OR CPI inflation OR jobless claims OR "retail sales" when:2d') },
   { id: 'gn-geo', name: 'Google News · Geopolítica', url: gn('"safe haven" OR tariffs OR sanctions OR "Middle East" OR Ukraine markets when:2d') },
+  { id: 'gn-oil', name: 'Google News · Petróleo', url: gn('oil prices OR Brent OR WTI OR OPEC when:2d') },
+  { id: 'gn-sp500', name: 'Google News · S&P 500', url: gn('"S&P 500" OR "Wall Street" OR "stock market" when:2d') },
+  { id: 'gn-nasdaq', name: 'Google News · Nasdaq', url: gn('Nasdaq OR "tech stocks" OR Nvidia OR "Big Tech" when:2d') },
+  { id: 'gn-btc', name: 'Google News · Bitcoin', url: gn('bitcoin OR "bitcoin ETF" OR crypto when:2d') },
   { id: 'fed', name: 'Reserva Federal', url: 'https://www.federalreserve.gov/feeds/press_all.xml' },
   { id: 'fxstreet', name: 'FXStreet', url: 'https://www.fxstreet.com/rss/news' },
   { id: 'marketwatch', name: 'MarketWatch', url: 'https://feeds.marketwatch.com/marketwatch/marketpulse/' },
   { id: 'cnbc-econ', name: 'CNBC · Economía', url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html' },
   { id: 'cnbc-fin', name: 'CNBC · Finanzas', url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html' },
   { id: 'investing', name: 'Investing.com · Metales', url: 'https://www.investing.com/rss/commodities_Metals.rss' },
+  { id: 'oilprice', name: 'OilPrice.com', url: 'https://oilprice.com/rss/main' },
+  { id: 'coindesk', name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/' },
+  { id: 'cointelegraph', name: 'Cointelegraph', url: 'https://cointelegraph.com/rss' },
 ];
 const CALENDAR_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
 // Diferencia (horas) de la hora del calendario respecto a UTC. Se confirma en el log de cada ejecución.
 const CAL_TZ = Number(process.env.CAL_TZ_OFFSET ?? 0);
-const MAX_AGE_H = 72, MAX_ITEMS = 250, PER_SOURCE = 60;
+const MAX_AGE_H = 72, MAX_ITEMS = 500, PER_SOURCE = 60;
 
 async function get(url) {
   const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml, */*' }, signal: AbortSignal.timeout(20000), redirect: 'follow' });
@@ -66,8 +73,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   for (const s of data.sources) console.log(`${s.ok ? 'OK ' : 'ERR'} ${s.id.padEnd(12)} ${String(s.count).padStart(3)} items ${s.ms}ms ${s.error || ''}`);
   console.log(`calendario: ${data.calendarOk ? data.calendar.length + ' eventos' : 'ERR ' + data.calendarError}; noticias únicas: ${data.items.length}`);
   for (const e of data.calendar.filter((x) => x.country === 'USD' && x.impact !== 'low').slice(0, 12)) console.log(`  CAL ${e.date} ${e.time || 'sin hora'} [feed-raw→UTC] ${e.country} ${e.impact} ${e.title} prev=${e.previous} fc=${e.forecast}`);
-  console.log('--- muestra de clasificación (más recientes) ---');
-  for (const i of data.items.slice(0, 40)) { const c = classify(i); console.log(`${c.bias.padEnd(8)} ${String(c.score).padStart(3)} ${c.relevant ? 'R' : '-'} ${i.published.slice(5, 16)} [${i.source}] ${i.title.slice(0, 110)}`); }
+  console.log('--- noticias relevantes por activo y muestra clasificada ---');
+  const cls = data.items.map((i) => ({ i, c: classify(i) }));
+  for (const a of ASSETS) {
+    const rel = cls.filter((x) => x.c[a.id].relevant);
+    const n = (b) => rel.filter((x) => x.c[a.id].bias === b).length;
+    console.log(`${a.name}: ${rel.length} relevantes (▲${n('alcista')} ▼${n('bajista')} ◆${n('mixto')})`);
+    for (const x of rel.slice(0, 6)) console.log(`   ${x.c[a.id].bias.padEnd(8)} ${String(x.c[a.id].score).padStart(3)} [${x.i.source}] ${x.i.title.slice(0, 100)}`);
+  }
   if (!data.sources.some((s) => s.ok) && !data.calendarOk) { console.error('Ninguna fuente respondió; no se actualiza news.json'); process.exit(1); }
   mkdirSync(new URL('../app/data/', import.meta.url), { recursive: true });
   writeFileSync(new URL('../app/data/news.json', import.meta.url), JSON.stringify(data));

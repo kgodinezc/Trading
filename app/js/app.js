@@ -18,7 +18,7 @@ const PLAN = [['si', 'Sí'], ['parcial', 'Parcial'], ['no', 'No']];
 let tab = 'resumen';
 let newsSeenPending = '';
 let charts = [];
-const view = { period: 'all', from: '', to: '', symbol: '', calMonth: null, selDay: null, showAll: false };
+const view = { period: 'all', from: '', to: '', symbol: '', calMonth: null, selDay: null };
 
 // ---------- datos y formato ----------
 const acc = () => state.accounts[state.settings.active];
@@ -27,6 +27,7 @@ const acc = () => state.accounts[state.settings.active];
 const tzOff = () => state.settings.tzOffset ?? DEFAULTS.tzOffset;
 const tzLabel = () => `UTC${tzOff() < 0 ? '−' : '+'}${Math.abs(tzOff())}`;
 const allTrades = () => (acc() ? store.accountTrades(state, state.settings.active) : []).map((t) => ({ ...t, openTime: toLocal(t.openTime, tzOff()), closeTime: toLocal(t.closeTime, tzOff()) }));
+const journal = () => { const a = state.settings.active; return a ? (state.journals[a] ||= {}) : {}; };
 const allOps = () => (acc() ? store.accountOps(state, state.settings.active) : []).map((b) => ({ ...b, time: b.time ? toLocal(b.time, tzOff()) : b.time }));
 const divisor = () => (acc()?.account.isCent && state.settings.unit === 'usd' ? 100 : 1);
 const cur = () => (divisor() === 100 ? 'USD' : acc()?.account.currency || '');
@@ -215,21 +216,6 @@ function renderInsights(el, ts, st) {
     }).join('');
 }
 
-function renderOps(el, ts) {
-  if (!ts.length) { el.innerHTML = noData(); return; }
-  const sorted = [...ts].sort((a, b) => b.closeTime.localeCompare(a.closeTime));
-  const shown = view.showAll ? sorted : sorted.slice(0, 100);
-  const rows = shown.map((t) => {
-    const n = state.tradeNotes[store.noteKey(state.settings.active, t.id)];
-    return `<tr><td>${shortTime(t.closeTime)}</td><td>${esc(t.symbol)}</td><td>${t.side === 'buy' ? 'Compra' : 'Venta'}</td><td>${t.volume}</td><td>${t.openPrice}</td><td>${t.closePrice}</td><td>${t.sl ?? ''}</td><td>${t.tp ?? ''}</td><td>${fmtDuration(t.durationSec)}</td><td class="${cls(t.net)}">${money(t.net, { sign: true })}</td><td style="text-align:left">${(n?.tags || []).map((g) => `<span class="pill">${esc(g)}</span>`).join('')}${n?.note ? ` <span title="${esc(n.note)}">📝</span>` : ''} <button class="btn ghost sm" data-note="${t.id}">Notas</button></td></tr>`;
-  }).join('');
-  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h3>${ts.length} operaciones</h3><button class="btn ghost sm" id="csvBtn">Exportar CSV</button></div>
-    <div class="scroll"><table><thead><tr><th>Cierre</th><th>Símbolo</th><th>Tipo</th><th>Lote</th><th>Entrada</th><th>Salida</th><th>SL</th><th>TP</th><th>Duración</th><th>Resultado</th><th style="text-align:left">Etiquetas / notas</th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${sorted.length > shown.length ? `<p><button class="btn ghost sm" id="moreBtn">Mostrar las ${sorted.length}</button></p>` : ''}</div>`;
-  $('#moreBtn')?.addEventListener('click', () => { view.showAll = true; render(); });
-  $('#csvBtn')?.addEventListener('click', () => exportCsv(sorted));
-}
-
 // ---------- bitácora ----------
 function renderBitacora(el) {
   const ts = allTrades();
@@ -246,7 +232,7 @@ function renderBitacora(el) {
   let monthNet = 0;
   for (let d = 1; d <= dim; d++) {
     const key = `${view.calMonth}-${String(d).padStart(2, '0')}`;
-    const g = byDay.get(key), j = state.journal[key];
+    const g = byDay.get(key), j = journal()[key];
     if (g) monthNet += g.net;
     cells += `<button class="d ${g ? (g.net >= 0 ? 'win' : 'loss') : ''} ${j ? 'has-note' : ''} ${key === view.selDay ? 'sel' : ''}" data-day="${key}">${d}${g ? `<b class="${cls(g.net)}">${money(g.net, { sign: true })}</b><span>${(entsByDay.get(key) || []).length} entr. · ${g.n} op.</span>` : ''}</button>`;
   }
@@ -275,7 +261,7 @@ function shiftMonth(delta) {
 }
 
 function renderDayPanel(byDay) {
-  const key = view.selDay, g = byDay.get(key), j = state.journal[key] || {};
+  const key = view.selDay, g = byDay.get(key), j = journal()[key] || {};
   const dayEntries = entriesOf(allTrades()).filter((e) => e.day === key);
   const radio = (name, opts, val) => opts.map(([v, l]) => `<label><input type="radio" name="${name}" value="${v}" ${val === v ? 'checked' : ''}><span>${l}</span></label>`).join('');
   $('#dayPanel').innerHTML = `<div class="card">
@@ -299,16 +285,16 @@ function renderDayPanel(byDay) {
     h = setTimeout(() => {
       const fd = Object.fromEntries(new FormData(form).entries());
       const entry = Object.fromEntries(Object.entries(fd).filter(([, v]) => String(v).trim() !== ''));
-      if (Object.keys(entry).length) state.journal[key] = { ...entry, updated: new Date().toISOString() }; else delete state.journal[key];
+      if (Object.keys(entry).length) journal()[key] = { ...entry, updated: new Date().toISOString() }; else delete journal()[key];
       persist(); $('#saved').textContent = 'Guardado ✓';
-      const btn = document.querySelector(`[data-day="${key}"]`); if (btn) btn.classList.toggle('has-note', !!state.journal[key]);
+      const btn = document.querySelector(`[data-day="${key}"]`); if (btn) btn.classList.toggle('has-note', !!journal()[key]);
     }, 400);
   });
 }
 
 function renderJournalStats(byDay) {
   const rows = [];
-  const entries = Object.entries(state.journal);
+  const entries = Object.entries(journal());
   const agg = (field, label) => {
     const m = new Map();
     for (const [d, j] of entries) {
@@ -326,7 +312,8 @@ function renderJournalStats(byDay) {
 function renderCalc(el) {
   const trades = allTrades();
   const syms = [...new Set(trades.map((t) => t.symbol))].sort();
-  const saved = state.settings.calc || {};
+  const calcBy = (state.settings.calcBy ||= {});
+  const saved = calcBy[state.settings.active] || {};
   const symbol = saved.symbol && syms.includes(saved.symbol) ? saved.symbol : syms[0] || '';
   const inferred = symbol ? inferValuePerLot(trades, symbol) : null;
   const d = divisor();
@@ -359,7 +346,7 @@ function renderCalc(el) {
   };
   const calc = () => {
     const i = read();
-    state.settings.calc = i; persist();
+    calcBy[state.settings.active] = i; persist();
     const r = positionSize({ balance: i.balance * d, riskPct: i.riskPct, entry: i.entry, sl: i.sl, valuePerLot: i.valuePerLot * d });
     if (r.error) { out.innerHTML = `<p class="note">${esc(r.error)}</p>`; return; }
     const tg = targets(i.entry, i.sl).map((t) => `<tr><td>1 : ${t.ratio}</td><td>${t.tp.toFixed(3)}</td><td>${pct(t.breakevenWinRate, 0)}</td></tr>`).join('');
@@ -375,7 +362,7 @@ function renderCalc(el) {
   };
   form.addEventListener('input', calc);
   form.addEventListener('change', (e) => {
-    if (e.target.name === 'symbol') { state.settings.calc = { ...read(), valuePerLot: undefined }; persist(); renderCalc(el); }
+    if (e.target.name === 'symbol') { calcBy[state.settings.active] = { ...read(), valuePerLot: undefined }; persist(); renderCalc(el); }
   });
   el.querySelectorAll('[data-risk]').forEach((b) => b.addEventListener('click', () => { form.riskPct.value = b.dataset.risk; calc(); }));
   calc();
@@ -449,7 +436,7 @@ function renderDatos(el) {
     <label class="inline">Hora local = hora del servidor del reporte <input type="number" step="1" id="tzOff" value="${tzOff()}" style="width:70px"> h</label>
     <p class="note">Exness registra en GMT; Costa Rica es UTC−6 todo el año (sin horario de verano), por eso el valor es −6. Con este ajuste las horas <b>y las fechas</b> se muestran en hora de Costa Rica; los datos guardados no se modifican.</p></div>
   <div class="card" style="margin-top:12px"><h3>Cuentas cargadas</h3>
-    ${accs.length ? `<table><thead><tr><th>Cuenta</th><th>Tipo</th><th>Operaciones</th><th>Último cierre</th><th></th></tr></thead><tbody>${accs.map((a) => { const ts = Object.values(a.trades); const last = ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), ''); return `<tr><td>${esc(a.account.number)}</td><td>${esc(a.account.name)} (${esc(a.account.currency)}, ${esc(a.account.mode)})</td><td>${ts.length}</td><td>${toLocal(last, tzOff()).replace('T', ' ')}</td><td><button class="btn danger sm" data-delacc="${esc(a.account.number)}">Eliminar</button></td></tr>`; }).join('')}</tbody></table>` : '<p class="note">Todavía no has cargado ninguna cuenta.</p>'}</div>
+    ${accs.length ? `<table><thead><tr><th>Cuenta</th><th>Nombre</th><th>Tipo</th><th>Operaciones</th><th>Último cierre</th><th></th></tr></thead><tbody>${accs.map((a) => { const ts = Object.values(a.trades); const last = ts.reduce((m, t) => (t.closeTime > m ? t.closeTime : m), ''); return `<tr><td>${esc(a.account.number)}</td><td><input type="text" data-alias="${esc(a.account.number)}" value="${esc(a.alias || '')}" placeholder="Ej.: Propia" style="width:120px"></td><td>${esc(a.account.name)} (${esc(a.account.currency)}, ${esc(a.account.mode)})</td><td>${ts.length}</td><td>${toLocal(last, tzOff()).replace('T', ' ')}</td><td><button class="btn danger sm" data-delacc="${esc(a.account.number)}">Eliminar</button></td></tr>`; }).join('')}</tbody></table>` : '<p class="note">Todavía no has cargado ninguna cuenta.</p>'}</div>
   <div class="card" style="margin-top:12px"><h3>Respaldo</h3>
     <p class="note">Tus datos viven solo en este navegador (si borras los datos del sitio, se pierden). Descarga un respaldo de vez en cuando; incluye operaciones, bitácora y notas.</p>
     <div class="row"><button class="btn" id="expBtn">Descargar respaldo (.json)</button><label class="btn ghost">Restaurar respaldo<input type="file" id="impFile" accept=".json" hidden></label></div></div>`;
@@ -465,9 +452,10 @@ function renderDatos(el) {
     if (!confirm('Restaurar reemplazará TODOS los datos actuales de la aplicación. ¿Continuar?')) return;
     try { store.importBackup(state, await f.text()); persist(); init(); toast('Respaldo restaurado ✓'); } catch (err) { toast(`⚠️ ${err.message}`); }
   });
+  el.querySelectorAll('[data-alias]').forEach((inp) => inp.addEventListener('change', () => { state.accounts[inp.dataset.alias].alias = inp.value.trim(); persist(); setupSelectors(); }));
   el.querySelectorAll('[data-delacc]').forEach((b) => b.addEventListener('click', () => {
     const n = b.dataset.delacc;
-    if (!confirm(`¿Eliminar la cuenta ${n} y todas sus operaciones? (La bitácora diaria se conserva.) Esta acción no se puede deshacer.`)) return;
+    if (!confirm(`¿Eliminar la cuenta ${n} y todas sus operaciones? (Su bitácora diaria se conserva y vuelve si cargas de nuevo esa cuenta.) Esta acción no se puede deshacer.`)) return;
     delete state.accounts[n];
     for (const k of Object.keys(state.tradeNotes)) if (k.startsWith(`${n}:`)) delete state.tradeNotes[k];
     if (state.settings.active === n) state.settings.active = Object.keys(state.accounts)[0] || null;
@@ -505,13 +493,6 @@ function download(name, text, type) {
   a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
-function exportCsv(ts) {
-  const head = ['id', 'simbolo', 'tipo', 'lote', 'apertura_hora_local', 'precio_entrada', 'cierre_hora_local', 'precio_salida', 'sl', 'tp', 'comision', 'swap', 'resultado', 'etiquetas', 'nota'];
-  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const lines = ts.map((t) => { const n = state.tradeNotes[store.noteKey(state.settings.active, t.id)] || {}; return [t.id, t.symbol, t.side, t.volume, t.openTime, t.openPrice, t.closeTime, t.closePrice, t.sl ?? '', t.tp ?? '', t.commission, t.swap, t.net, (n.tags || []).join('|'), n.note || ''].map(q).join(','); });
-  download('operaciones.csv', '﻿' + [head.join(','), ...lines].join('\n'), 'text/csv');
-}
-
 // ---------- ciclo principal ----------
 function render() {
   const fz = $('#tzNote'); if (fz) fz.textContent = `Horas y fechas en hora de Costa Rica (${tzLabel()}).`;
@@ -543,13 +524,14 @@ function render() {
   if (tab === 'resumen') renderResumen(el, ts, st);
   else if (tab === 'stats') renderStats(el, ts, st);
   else if (tab === 'insights') renderInsights(el, ts, st);
-  else if (tab === 'ops') renderOps(el, ts);
 }
+
+const accountLabel = (a) => `${a.alias ? `${a.alias} · ` : ''}${a.account.number} (${a.account.currency}${a.account.isCent ? ' cent' : ''})`;
 
 function setupSelectors() {
   const as = $('#accountSel');
   const accs = Object.values(state.accounts);
-  as.innerHTML = accs.length ? accs.map((a) => `<option value="${esc(a.account.number)}" ${a.account.number === state.settings.active ? 'selected' : ''}>Cuenta ${esc(a.account.number)}</option>`).join('') : '<option>Sin cuentas</option>';
+  as.innerHTML = accs.length ? accs.map((a) => `<option value="${esc(a.account.number)}" ${a.account.number === state.settings.active ? 'selected' : ''}>${esc(accountLabel(a))}</option>`).join('') : '<option>Sin cuentas</option>';
   const us = $('#unitSel');
   if (acc()?.account.isCent) {
     us.hidden = false;

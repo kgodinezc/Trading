@@ -9,7 +9,8 @@ insights, recomendaciones y una **bitácora diaria** de tus operaciones.
 ## Uso
 1. En MT5: pestaña *Historial* → clic derecho → *Informe* → *Abrir XML (MS Excel)*.
 2. Abre la app → pestaña **Datos** → sube el .xlsx (puedes subir reportes nuevos; no se duplican operaciones).
-3. Explora **Resumen**, **Estadísticas**, **Insights**, **Operaciones**, **Calculadora** y **Bitácora**.
+3. Explora **Resumen**, **Estadísticas**, **Insights**, **Noticias**, **Calculadora** y **Bitácora**.
+4. Si operas varias cuentas de Exness, sube el reporte de cada una y cambia entre ellas con el selector **Cuenta** (arriba a la derecha); en *Datos* puedes ponerles un nombre. Cada cuenta tiene sus propias estadísticas, entradas, notas y bitácora diaria.
 
 Local: `npm start` (http://localhost:8080) · Pruebas: `npm test`.
 Publicación: Settings → Pages → Source: *GitHub Actions* (el workflow publica la carpeta `app/` desde `main`).
@@ -21,7 +22,7 @@ Publicación: Settings → Pages → Source: *GitHub Actions* (el workflow publi
   exceso de posiciones simultáneas, sobreoperación, mejores/peores horas, drawdown y riesgo por operación.
 - **Calculadora de lote**: lote según % de riesgo, precio de entrada y Stop Loss (valor por lote deducido de tus operaciones), con TP por ratio R:B y win rate mínimo.
 - **Entradas**: las operaciones cerradas dentro de una ventana de 30 min (ajustable) se agrupan como **una entrada**, tal como en tu hoja de Excel; cada entrada se documenta con etiquetas y notas. 
-- **Noticias**: titulares del día y agenda económica (hora de Costa Rica) con una lectura automática de su impacto en el oro (▲ alcista / ▼ bajista / ◆ mixto), el porqué de cada lectura, un resumen del sesgo de las últimas 12 h, y un aviso en toda la app cuando se acerca una noticia USD de alto impacto. Se refresca sola cada 5 min.
+- **Noticias** de **oro, petróleo, S&P 500, Nasdaq 100 y Bitcoin**: titulares del día y agenda económica (hora de Costa Rica) con una lectura automática de su impacto en cada activo (▲ alcista / ▼ bajista / ◆ mixto) y el porqué (el mismo hecho afecta distinto a cada activo: p. ej. tasas altas pesan más en el Nasdaq que en el petróleo). Incluye una perspectiva de las últimas 12 h con los factores a favor y en contra, un panorama de los cinco activos y un aviso en toda la app cuando se acerca una noticia USD de alto impacto. Se refresca sola cada 5 min.
 - **Bitácora**: calendario con P/L, plan previo, ¿seguí mi plan?, qué hice bien, qué debo mejorar, notas y etiquetas por operación,
   y cruce de disciplina vs. resultado. Respaldo/restauración en JSON.
 - Cuentas **cent (USC)**: se muestran en USD (÷100) o en centavos.
@@ -31,7 +32,7 @@ Publicación: Settings → Pages → Source: *GitHub Actions* (el workflow publi
 ## Noticias: cómo se actualizan
 Los navegadores no pueden leer los medios directamente (CORS), así que el workflow `Publicar app web` corre **cada 10 min**
 (`schedule`), ejecuta `scripts/fetch-news.js` (feeds RSS de Google News, Fed, FXStreet, MarketWatch, CNBC, Investing.com y el
-calendario económico de ForexFactory, en UTC), genera `app/data/news.json` y vuelve a publicar la página. La app lee ese archivo
+calendario económico de ForexFactory, en UTC; además OilPrice.com, CoinDesk, Cointelegraph y Yahoo Finance para petróleo y cripto), genera `app/data/news.json` y vuelve a publicar la página. La app lee ese archivo
 y clasifica el impacto con reglas de palabras clave (`app/js/core/newsimpact.js`). Solo se guardan titulares y enlaces a la fuente.
 
 - GitHub ejecuta los workflows programados de forma **irregular**: en este repositorio el cron de 10 min llegó a correr solo cada

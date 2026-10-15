@@ -11,7 +11,7 @@
 <header class="top">
   <div class="brand">📈 Bitácora de Trading</div>
   <div class="top-ctl">
-    <select id="accountSel" title="Cuenta" aria-label="Cuenta"></select>
+    <label class="acc-label">Cuenta <select id="accountSel" title="Cuenta" aria-label="Cuenta"></select></label>
     <select id="unitSel" title="Unidad" aria-label="Unidad"></select>
   </div>
 </header>
@@ -20,7 +20,6 @@
   <button data-tab="resumen" class="on">Resumen</button>
   <button data-tab="stats">Estadísticas</button>
   <button data-tab="insights">Insights</button>
-  <button data-tab="ops">Operaciones</button>
   <button data-tab="noticias">Noticias</button>
   <button data-tab="calc">Calculadora</button>
   <button data-tab="bitacora">Bitácora</button>
@@ -49,7 +48,6 @@
   <div id="view-resumen" class="view"></div>
   <div id="view-stats" class="view" hidden></div>
   <div id="view-insights" class="view" hidden></div>
-  <div id="view-ops" class="view" hidden></div>
   <div id="view-noticias" class="view" hidden></div>
   <div id="view-calc" class="view" hidden></div>
   <div id="view-bitacora" class="view" hidden></div>

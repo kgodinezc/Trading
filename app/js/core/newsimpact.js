@@ -13,14 +13,14 @@ export const ASSET_IDS = ASSETS.map((a) => a.id);
 export const assetName = (id) => ASSETS.find((a) => a.id === id)?.name || id;
 
 const UP = String.raw`(?:rises?|rose|jumps?|jumped|surges?|surged|climbs?|climbed|rall(?:y|ies|ied)|gains?|gained|advances?|advanced|soars?|soared|spikes?|spiked|rebounds?|rebounded|extends gains)`;
-const DOWN = String.raw`(?:falls?|fell|slips?|slipped|drops?|dropped|declines?|declined|retreats?|retreated|slides?|slid|tumbles?|tumbled|sinks?|sank|plunges?|plunged|slumps?|slumped|crashes|crashed|extends losses|sell-?off)`;
+const DOWN = String.raw`(?:falls?|fell|slips?|slipped|drops?|dropped|declines?|declined|retreats?|retreated|slides?|slid|tumbles?|tumbled|sinks?|sank|plunges?|plunged|slumps?|slumped|crashes|crashed|dips?|dipped|craters?|cratered|extends losses|sell-?off)`;
 const R = (strings, ...v) => new RegExp(String.raw(strings, ...v));
 
 // e = [oro, petróleo, S&P 500, Nasdaq 100, Bitcoin]
 const RULES = [
   // ---- Fed y tasas ----
   { id: 'hawk', topic: 'Fed y tasas', e: [-2, -1, -2, -2, -2],
-    re: /\b(no|fewer|less|delays?|delayed|rules? out|dims?|pares?|pared|pushes? back on|scal(es|ed) back|fades?|fading)\b ?(?:\w+ ){0,3}(rate[- ])?cuts?\b|\b(rate[- ]cut|cut) (bets|expectations|hopes|odds) (fade|fall|wane|recede|drop|dim|slip)|\bhawkish\b|\b(raise|raises|raising|hike|hikes|hiking) (the |its )?(benchmark |interest |policy )?rates?\b|\brate[- ]hikes?\b|\b(rate|inflation) (hike )?fears\b|\brevives? (rate|inflation|hike)\b|\bhigher[- ]for[- ]longer\b|\btighten(s|ing)?\b/,
+    re: /\b(no|fewer|less|delays?|delayed|rules? out|dims?|pares?|pared|pushes? back on|scal(es|ed) back|fades?|fading)\b ?(?:\w+ ){0,3}(rate[- ])?cuts?\b|\b(rate[- ]cut|cut) (bets|expectations|hopes|odds) (fade|fall|wane|recede|drop|dim|slip)|\bhawkish\b|\b(raise|raises|raising|hike|hikes|hiking) (the |its )?(benchmark |interest |policy )?rates?\b|\brate[- ]hikes?\b|\b(rate|inflation) (hike )?fears\b|\b(rate )?hike (bets|expectations|odds|probability|pricing)\b[^,;.]{0,20}\b(rise|rises|rose|climb\w*|grow\w*|increase\w*|jump\w*|surge\w*)\b|\bpric(es|ing) in (a |more )?(rate )?hikes?\b|\brevives? (rate|inflation|hike)\b|\bhigher[- ]for[- ]longer\b|\btighten(s|ing)?\b/,
     why: { gold: 'Tono restrictivo o menos recortes de tasas: sube el rendimiento real y el dólar, presión bajista para el oro.',
       oil: 'Tasas más altas frenan el crecimiento y la demanda esperada de crudo (efecto débil).',
       sp500: 'Tasas más altas encarecen el financiamiento y reducen el valor de las acciones.',
@@ -204,13 +204,14 @@ const RULES = [
 
 // Palabras que hacen que una noticia concierna a un activo aunque ninguna regla puntúe.
 const KEYWORDS = {
-  gold: /\b(gold|xau|bullion|safe[- ]haven|fed|fomc|powell|treasury|treasuries|dollar|dxy|inflation|jobs|payrolls|cpi|pce|tariffs?|central bank|rate cut|yields?|recession|geopolit\w*)\b/i,
+  gold: /\b(gold|xau|bullion|safe[- ]haven)\b/i,
   oil: /\b(oil|crude|brent|wti|opec\+?|petroleum|gasoline|refiner\w*|energy prices?|hormuz)\b/i,
   sp500: /\b(s&p 500|s&p|sp500|spx|wall street|dow jones|stocks?|equities|stock market|earnings)\b/i,
   nasdaq: /\b(nasdaq|tech stocks?|big tech|technology (stocks?|sector)|chipmakers?|semiconductors?|nvidia|artificial intelligence)\b|\bai\b/i,
   btc: /\b(bitcoin|btc|crypto\w*|ether(eum)?|stablecoins?|spot (bitcoin )?etfs?|binance|coinbase)\b/i,
 };
-const STOCK_PROMO = /\((?:TSX|TSXV|NYSE|NASDAQ|ASX|LSE|CVE|NYSEAMERICAN)[:\s][A-Z.]+\)|\b(fair value|drill results|price target|analyst ratings?)\b/i;
+// Notas de empresas (mineras, promoción de acciones): no son noticias del activo salvo que una regla de precio/macro coincida
+const STOCK_PROMO = /\((?:TSX|TSXV|NYSE|NASDAQ|ASX|LSE|CVE|NYSEAMERICAN)[:\s][A-Z.]+\)|\b(fair value|drill\w*|price target|analyst ratings?|pea|feasibility|exploration|resource estimate|royalty|mineralization|g\/t)\b/i;
 
 const IDX = { gold: 0, oil: 1, sp500: 2, nasdaq: 3, btc: 4 };
 
@@ -233,9 +234,9 @@ function evaluate(asset, hits, text, promo) {
   else if (score <= -1) bias = 'bajista';
   const strength = bias === 'mixto' ? Math.min(3, Math.max(pos, -neg)) : Math.min(3, Math.abs(score));
   const kw = KEYWORDS[asset].test(text);
-  // El oro conserva su criterio amplio (macro); el resto exige una palabra propia o al menos una regla fuerte (|efecto| ≥ 2)
+  // Relevante = una regla puntuó para el activo, o nombra al activo, o (en los demás activos) alguna regla fuerte (|efecto| ≥ 2)
   const strongest = used.reduce((m, r) => Math.max(m, Math.abs(r.e[i])), 0);
-  const relevant = !promo && (asset === 'gold' ? used.length > 0 || kw : kw || strongest >= 2) || (promo && used.length > 0);
+  const relevant = promo ? used.length > 0 : (asset === 'gold' ? used.length > 0 || kw : kw || strongest >= 2);
   return {
     bias, score, strength,
     topics: [...new Set(used.map((r) => r.topic))],
@@ -326,7 +327,7 @@ export function classifyEvent(ev) {
 // ---- Resumen del sesgo reciente de un activo ----
 export function summarizeBias(items, nowMs, { hours = 12, halfLifeH = 6, asset = 'gold' } = {}) {
   const from = nowMs - hours * 3600e3;
-  const recent = items.filter((i) => Date.parse(`${i.published}Z`) >= from && i.impacts && i.impacts[asset] && i.impacts[asset].relevant);
+  const recent = items.filter((i) => Date.parse(`${i.published}Z`) >= from && i.impacts && i.impacts[asset] && i.impacts[asset].relevant && i.impacts[asset].bias !== 'neutral');
   let net = 0, bull = 0, bear = 0, mixed = 0;
   const topics = new Map();
   for (const it of recent) {

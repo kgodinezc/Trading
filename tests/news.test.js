@@ -163,3 +163,15 @@ test('classify: cada activo tiene su propia lectura del mismo hecho', () => {
   for (const a of ['gold', 'oil', 'sp500', 'btc']) assert.equal(apple[a].relevant, false, a);
   assert.equal(c('Oil jumps as OPEC+ agrees to deepen production cuts').gold.relevant, false);
 });
+
+test('classify: titulares reales de cripto, petróleo e índices (octubre 2026)', () => {
+  const c = (t) => classify({ title: t });
+  assert.equal(c('Will a Fed Hold Ease Bitcoin Pressure as Hike Bets Rise Toward December?').btc.bias, 'bajista');
+  assert.equal(c('Bitcoin Briefly Dips Below $80,000 as Volatility Roils Markets').btc.bias, 'bajista');
+  assert.equal(c('Bitcoin Whipsaws as Crypto Liquidations Near $1 Billion').btc.bias, 'bajista');
+  assert.equal(c('Nasdaq slides to near one-month low as AI rout deepens').nasdaq.bias, 'bajista');
+  assert.equal(c('Iranian Ship Attacks Threaten Middle East Oil Exports as Tanker Traffic Slows').oil.bias, 'alcista');
+  // empresas mineras y notas promocionales no son noticias del oro
+  assert.equal(c('New PEA lifts value of Bonterra’s Quebec gold project to $665M').gold.relevant, false);
+  assert.equal(c('A money changer arranges US dollar bills at a currency exchange counter in Manila').gold.relevant, false);
+});

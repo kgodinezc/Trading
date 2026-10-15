@@ -127,8 +127,9 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
   const hours = prefs.hours || 24;
   const asset = ASSETS.some((a) => a.id === prefs.asset) ? prefs.asset : 'gold';
   const aname = assetName(asset);
+  const mode = prefs.only === 'all' ? 'all' : prefs.only === 'neutral' ? 'neutral' : 'bias'; // 'relevant' (valor antiguo) = con sesgo
   const items = data.items.filter((i) => now - ms(i.published) <= hours * 3600e3)
-    .filter((i) => prefs.only === 'all' || i.impacts[asset].relevant)
+    .filter((i) => mode === 'all' || (i.impacts[asset].relevant && (mode === 'neutral' || i.impacts[asset].bias !== 'neutral')))
     .filter((i) => prefs.bias === 'all' || i.impacts[asset].bias === prefs.bias)
     .filter((i) => !prefs.q || `${i.title} ${i.source}`.toLowerCase().includes(prefs.q.toLowerCase()));
   const sum = summarizeBias(data.items, now, { hours: 12, asset });
@@ -185,7 +186,7 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
   <div class="grid cols2">
     <div class="card ins ${tone}"><h3>Perspectiva de ${esc(aname)} (últimas 12 h)</h3>
       <h4 style="font-size:20px;text-transform:capitalize">${esc(sum.label)}</h4>
-      <p>${sum.bull} noticias a favor · ${sum.bear} en contra · ${sum.mixed} mixtas, de ${sum.total} relevantes. Las más recientes pesan más.</p>
+      <p>${sum.bull} noticias a favor · ${sum.bear} en contra · ${sum.mixed} mixtas (${sum.total} con sesgo en las últimas 12 h). Las más recientes pesan más.</p>
       <ul class="drivers">${topicRows || '<li class="note">Sin factores dominantes.</li>'}</ul>
       <p class="note">Lectura automática por palabras clave; es una guía de contexto, no una señal de entrada. Confírmala siempre con el gráfico.</p></div>
     <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Agenda de hoy (${esc(tzLabel())})</h3>
@@ -194,7 +195,7 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
   <div class="card" style="margin:12px 0"><div class="row">
     <label class="inline">Ventana <select id="fHours">${[3, 6, 12, 24, 48].map((h) => `<option value="${h}" ${h === hours ? 'selected' : ''}>${h} h</option>`).join('')}</select></label>
     <label class="inline">Sesgo <select id="fBias">${[['all', 'Todos'], ['alcista', 'Alcistas'], ['bajista', 'Bajistas'], ['mixto', 'Mixtas']].map(([v, l]) => `<option value="${v}" ${prefs.bias === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    <label class="inline"><input type="checkbox" id="fRel" ${prefs.only !== 'all' ? 'checked' : ''}> Solo relevantes para ${esc(aname)}</label>
+    <label class="inline">Mostrar <select id="fMode">${[['bias', `Con sesgo claro para ${aname}`], ['neutral', 'Relevantes (incluye neutrales)'], ['all', 'Todo']].map(([v, l]) => `<option value="${v}" ${mode === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
     <input type="text" id="fQ" placeholder="Buscar…" value="${esc(prefs.q || '')}" style="width:160px">
     <span class="note">${items.length} titulares</span></div></div>
   ${list || '<div class="empty"><p>No hay titulares con estos filtros.</p></div>'}
@@ -220,7 +221,7 @@ export function renderNews(el, { prefs, save, tzOff, tzLabel, lastSeen }) {
   el.querySelectorAll('[data-asset]').forEach((b) => b.addEventListener('click', () => { prefs.asset = b.dataset.asset; save(); again(); }));
   bind('#fHours', (t) => { prefs.hours = +t.value; });
   bind('#fBias', (t) => { prefs.bias = t.value; });
-  bind('#fRel', (t) => { prefs.only = t.checked ? 'relevant' : 'all'; });
+  bind('#fMode', (t) => { prefs.only = t.value; });
   bind('#fUsd', (t) => { prefs.usdOnly = t.checked; });
   bind('#fHigh', (t) => { prefs.highOnly = t.checked; });
   el.querySelector('#fQ').addEventListener('change', (e) => { prefs.q = e.target.value.trim(); save(); again(); });

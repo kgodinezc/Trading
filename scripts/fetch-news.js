@@ -23,7 +23,6 @@ export const SOURCES = [
   { id: 'cnbc-econ', name: 'CNBC · Economía', url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html' },
   { id: 'cnbc-fin', name: 'CNBC · Finanzas', url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html' },
   { id: 'investing', name: 'Investing.com · Metales', url: 'https://www.investing.com/rss/commodities_Metals.rss' },
-  { id: 'yahoo', name: 'Yahoo Finance', url: 'https://finance.yahoo.com/news/rssindex' },
   { id: 'oilprice', name: 'OilPrice.com', url: 'https://oilprice.com/rss/main' },
   { id: 'coindesk', name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/' },
   { id: 'cointelegraph', name: 'Cointelegraph', url: 'https://cointelegraph.com/rss' },

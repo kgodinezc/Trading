@@ -1,7 +1,6 @@
 import { parseExnessReport, toMs } from './core/parser.js';
 import { computeStats, equityCurve, summarize, groupBy, day } from './core/stats.js';
 import { buildInsights, fmtDuration, WEEKDAYS } from './core/insights.js';
-import { positionSize, inferValuePerLot, targets } from './core/risk.js';
 import { groupEntries, toLocal, entriesByDay, DEFAULTS } from './core/entries.js';
 import { loadNews, renderNews, upcomingAlert, newestPublished } from './news-view.js';
 import * as store from './core/store.js';
@@ -10,6 +9,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const storage = (() => { try { localStorage.getItem('x'); return localStorage; } catch { const m = {}; return { getItem: (k) => m[k] ?? null, setItem: (k, v) => { m[k] = v; } }; } })();
 const state = store.load(storage);
+delete state.settings.calc; delete state.settings.calcBy; // ajustes de la calculadora eliminada
 const persist = () => { if (!store.save(storage, state)) toast('⚠️ No se pudo guardar en el navegador (¿almacenamiento lleno o bloqueado?). Exporta un respaldo.'); };
 
 const TAGS = ['Setup válido', 'Sin SL', 'Moví el SL', 'Promedié', 'FOMO', 'Revancha', 'Sobreoperé', 'Noticias', 'Cerré por miedo', 'Fuera de horario'];
@@ -308,67 +308,6 @@ function renderJournalStats(byDay) {
 }
 
 
-// ---------- calculadora de lote ----------
-function renderCalc(el) {
-  const trades = allTrades();
-  const syms = [...new Set(trades.map((t) => t.symbol))].sort();
-  const calcBy = (state.settings.calcBy ||= {});
-  const saved = calcBy[state.settings.active] || {};
-  const symbol = saved.symbol && syms.includes(saved.symbol) ? saved.symbol : syms[0] || '';
-  const inferred = symbol ? inferValuePerLot(trades, symbol) : null;
-  const d = divisor();
-  const eqNow = acc() ? equityCurve([...trades].sort((a, b) => a.closeTime.localeCompare(b.closeTime)), allOps()).balance : 0;
-  const v = {
-    balance: saved.balance ?? (eqNow ? +(eqNow / d).toFixed(2) : ''),
-    riskPct: saved.riskPct ?? 1,
-    entry: saved.entry ?? '', sl: saved.sl ?? '',
-    valuePerLot: saved.valuePerLot ?? (inferred ? +(inferred / d).toFixed(4) : ''),
-  };
-  const avgLot = trades.length ? trades.reduce((a, t) => a + t.volume, 0) / trades.length : null;
-  el.innerHTML = `<div class="grid cols2">
-    <div class="card"><h3>Calculadora de lote</h3>
-      <form class="form" id="calcForm" autocomplete="off">
-        ${syms.length ? `<label>Símbolo<select name="symbol">${syms.map((x) => `<option ${x === symbol ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>` : ''}
-        <label>Balance (${esc(cur() || 'unidad de la cuenta')})<input type="number" step="any" name="balance" value="${esc(v.balance)}"></label>
-        <label>Riesgo por operación (%)<input type="number" step="0.1" min="0.1" name="riskPct" value="${esc(v.riskPct)}"></label>
-        <div class="row">${[0.5, 1, 2].map((r) => `<button type="button" class="btn ghost sm" data-risk="${r}">${r}%</button>`).join('')}<span class="note">Referencia habitual: 0,5%–2%</span></div>
-        <label>Precio de entrada<input type="number" step="any" name="entry" value="${esc(v.entry)}"></label>
-        <label>Precio del Stop Loss<input type="number" step="any" name="sl" value="${esc(v.sl)}"></label>
-        <label>Valor de 1,00 de movimiento de precio con 1 lote (${esc(cur() || 'unidad de la cuenta')})<input type="number" step="any" name="valuePerLot" value="${esc(v.valuePerLot)}"></label>
-        <p class="note">${inferred ? `Calculado automáticamente de tus operaciones en ${esc(symbol)}; puedes corregirlo.` : 'No hay suficientes operaciones para deducirlo: consulta la especificación del contrato de tu broker (p. ej. oro estándar: 100 oz = 100 por 1,00 de movimiento).'}</p>
-      </form></div>
-    <div class="card"><h3>Resultado</h3><div id="calcOut"></div></div></div>`;
-  const form = $('#calcForm');
-  const out = $('#calcOut');
-  const read = () => {
-    const f = Object.fromEntries(new FormData(form).entries());
-    return { symbol: f.symbol || '', balance: parseFloat(f.balance), riskPct: parseFloat(f.riskPct), entry: parseFloat(f.entry), sl: parseFloat(f.sl), valuePerLot: parseFloat(f.valuePerLot) };
-  };
-  const calc = () => {
-    const i = read();
-    calcBy[state.settings.active] = i; persist();
-    const r = positionSize({ balance: i.balance * d, riskPct: i.riskPct, entry: i.entry, sl: i.sl, valuePerLot: i.valuePerLot * d });
-    if (r.error) { out.innerHTML = `<p class="note">${esc(r.error)}</p>`; return; }
-    const tg = targets(i.entry, i.sl).map((t) => `<tr><td>1 : ${t.ratio}</td><td>${t.tp.toFixed(3)}</td><td>${pct(t.breakevenWinRate, 0)}</td></tr>`).join('');
-    out.innerHTML = `
-      <div class="kpi"><div class="s">Lote sugerido (${r.side === 'buy' ? 'compra' : 'venta'})</div><div class="v">${r.lot.toFixed(2)}</div>
-      <div class="s">Riesgo máximo: ${money(r.riskAmount)} (${i.riskPct}% del balance) · distancia al SL: ${r.distance.toFixed(3)}</div></div>
-      ${r.belowMin ? `<div class="warn-box">Con este SL y balance, el lote mínimo (0,01) ya arriesga ${money(r.actualRisk)} (${r.actualRiskPct.toFixed(2)}%), más de lo que querías. Acerca el SL o reduce la exposición.</div>` : `<p class="note">Riesgo real con ese lote: ${money(r.actualRisk)} (${r.actualRiskPct.toFixed(2)}%).</p>`}
-      ${avgLot ? `<p class="note">Tu lote medio histórico: ${avgLot.toFixed(2)}${avgLot > r.lot * 1.5 ? ' — es bastante mayor que el sugerido: estás arriesgando más del % elegido.' : '.'}</p>` : ''}
-      <h3 style="margin-top:12px">Take Profit según ratio riesgo:beneficio</h3>
-      <table><thead><tr><th>R:B</th><th>TP</th><th>Win rate mín.</th></tr></thead><tbody>${tg}</tbody></table>
-      <p class="note">Si tu win rate histórico es ${pct(computeStats(trades, []).all.winRate, 0)}, elige un R:B cuyo win rate mínimo (última columna) quede por debajo de ese valor.</p>
-      <p class="note">Si abres varias posiciones a la vez, el riesgo se suma: reparte el % entre todas.</p>`;
-  };
-  form.addEventListener('input', calc);
-  form.addEventListener('change', (e) => {
-    if (e.target.name === 'symbol') { calcBy[state.settings.active] = { ...read(), valuePerLot: undefined }; persist(); renderCalc(el); }
-  });
-  el.querySelectorAll('[data-risk]').forEach((b) => b.addEventListener('click', () => { form.riskPct.value = b.dataset.risk; calc(); }));
-  calc();
-}
-
-
 function entryCard(e) {
   const n = state.entryNotes[entryKey(e.id)];
   const sides = [e.buys ? `${e.buys} compra${e.buys > 1 ? 's' : ''}` : '', e.sells ? `${e.sells} venta${e.sells > 1 ? 's' : ''}` : ''].filter(Boolean).join(' + ');
@@ -499,13 +438,12 @@ function render() {
   charts.forEach((c) => c.destroy()); charts = [];
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== `view-${tab}`; });
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
-  $('#filters').hidden = ['bitacora', 'datos', 'calc', 'noticias'].includes(tab) || !allTrades().length;
+  $('#filters').hidden = ['bitacora', 'datos', 'noticias'].includes(tab) || !allTrades().length;
   $('#filters').classList.toggle('is-custom', view.period === 'custom');
   renderNewsBar();
   const el = $(`#view-${tab}`);
   if (tab === 'datos') return renderDatos(el);
   if (tab === 'bitacora') return renderBitacora(el);
-  if (tab === 'calc') return renderCalc(el);
   if (tab === 'noticias') {
     const prefs = (state.settings.news ||= { hours: 24, only: 'relevant', bias: 'all', usdOnly: true, highOnly: false });
     const lastSeen = state.settings.newsSeen || '';

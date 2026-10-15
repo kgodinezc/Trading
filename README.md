@@ -9,7 +9,7 @@ insights, recomendaciones y una **bitácora diaria** de tus operaciones.
 ## Uso
 1. En MT5: pestaña *Historial* → clic derecho → *Informe* → *Abrir XML (MS Excel)*.
 2. Abre la app → pestaña **Datos** → sube el .xlsx (puedes subir reportes nuevos; no se duplican operaciones).
-3. Explora **Resumen**, **Estadísticas**, **Insights**, **Noticias**, **Calculadora** y **Bitácora**.
+3. Explora **Resumen**, **Estadísticas**, **Insights**, **Noticias** y **Bitácora**.
 4. Si operas varias cuentas de Exness, sube el reporte de cada una y cambia entre ellas con el selector **Cuenta** (arriba a la derecha); en *Datos* puedes ponerles un nombre. Cada cuenta tiene sus propias estadísticas, entradas, notas y bitácora diaria.
 
 Local: `npm start` (http://localhost:8080) · Pruebas: `npm test`.
@@ -20,7 +20,6 @@ Publicación: Settings → Pages → Source: *GitHub Actions* (el workflow publi
 - Desglose por hora, día de la semana, duración, dirección, lote, tipo de entrada, motivo de cierre, con/sin SL y etiquetas.
 - **Insights**: esperanza negativa, falta de Stop Loss, efecto disposición, trading de revancha, subir lote tras perder,
   exceso de posiciones simultáneas, sobreoperación, mejores/peores horas, drawdown y riesgo por operación.
-- **Calculadora de lote**: lote según % de riesgo, precio de entrada y Stop Loss (valor por lote deducido de tus operaciones), con TP por ratio R:B y win rate mínimo.
 - **Entradas**: las operaciones cerradas dentro de una ventana de 30 min (ajustable) se agrupan como **una entrada**, tal como en tu hoja de Excel; cada entrada se documenta con etiquetas y notas. 
 - **Noticias** de **oro, petróleo, S&P 500, Nasdaq 100 y Bitcoin**: titulares del día y agenda económica (hora de Costa Rica) con una lectura automática de su impacto en cada activo (▲ alcista / ▼ bajista / ◆ mixto) y el porqué (el mismo hecho afecta distinto a cada activo: p. ej. tasas altas pesan más en el Nasdaq que en el petróleo). Incluye una perspectiva de las últimas 12 h con los factores a favor y en contra, un panorama de los cinco activos y un aviso en toda la app cuando se acerca una noticia USD de alto impacto. Se refresca sola cada 5 min.
 - **Bitácora**: calendario con P/L, plan previo, ¿seguí mi plan?, qué hice bien, qué debo mejorar, notas y etiquetas por operación,
